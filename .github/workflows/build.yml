@@ -30,11 +30,9 @@ jobs:
 
       - name: Install repo tool
         run: |
-          mkdir -p ~/bin
-          echo 'export PATH=~/bin:$PATH' >> ~/.bashrc
-          source ~/.bashrc
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod a+x ~/bin/repo
+          sudo curl https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+          repo --version
 
       - name: Init PixelOS sixteen-qpr1
         run: |
