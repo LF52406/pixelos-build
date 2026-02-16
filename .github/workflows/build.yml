@@ -34,13 +34,13 @@ jobs:
           sudo chmod a+x /usr/local/bin/repo
           repo --version
 
-      - name: Init PixelOS sixteen-qpr1
+      - name: Init PixelOS sixteen-qpr2
         run: |
           mkdir pixel
           cd pixel
-          repo init -u https://github.com/PixelOS-AOSP/manifest -b sixteen-qpr1 --depth=1
+          repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --depth=1
 
-      - name: Sync Source (Shallow)
+      - name: Sync Source
         run: |
           cd pixel
           repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune -j4
