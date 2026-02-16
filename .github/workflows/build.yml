@@ -1,4 +1,4 @@
-name: Test Server
+name: PixelOS Mondrian Build
 
 on:
   workflow_dispatch:
@@ -6,10 +6,50 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
+
     steps:
-      - name: Show system info
+      - name: Free Disk Space
         run: |
-          echo "CPU:"
-          nproc
-          echo "RAM:"
-          free -h
+          echo "Before cleanup:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo docker system prune -af
+          echo "After cleanup:"
+          df -h
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git-core gnupg flex bison build-essential zip curl \
+          zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+          libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
+          libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3
+
+      - name: Install repo tool
+        run: |
+          mkdir -p ~/bin
+          echo 'export PATH=~/bin:$PATH' >> ~/.bashrc
+          source ~/.bashrc
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+
+      - name: Init PixelOS sixteen-qpr1
+        run: |
+          mkdir pixel
+          cd pixel
+          repo init -u https://github.com/PixelOS-AOSP/manifest -b sixteen-qpr1 --depth=1
+
+      - name: Sync Source (Shallow)
+        run: |
+          cd pixel
+          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune -j4
+
+      - name: Build for mondrian
+        run: |
+          cd pixel
+          source build/envsetup.sh
+          lunch aosp_mondrian-userdebug
+          make -j4
