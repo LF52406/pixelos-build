@@ -5,19 +5,19 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 360
 
     steps:
-      - name: Free Disk Space
+      - name: Aggressive Cleanup
         run: |
-          echo "Before cleanup:"
-          df -h
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
-          sudo docker system prune -af
-          echo "After cleanup:"
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/lib/jvm
+          sudo apt clean
           df -h
 
       - name: Install Dependencies
@@ -28,26 +28,25 @@ jobs:
           libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
           libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3
 
-      - name: Install repo tool
+      - name: Install repo
         run: |
           sudo curl https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
           sudo chmod a+x /usr/local/bin/repo
-          repo --version
 
-      - name: Init PixelOS sixteen-qpr2
+      - name: Init Repo
         run: |
           mkdir pixel
           cd pixel
-          repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --depth=1
+          repo init -u https://github.com/PixelOS-AOSP/manifest -b sixteen-qpr1
 
-      - name: Sync Source
+      - name: Sync Source (Low Space Mode)
         run: |
           cd pixel
-          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune -j4
+          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune -j2
 
-      - name: Build for mondrian
+      - name: Build
         run: |
           cd pixel
           source build/envsetup.sh
           lunch aosp_mondrian-userdebug
-          make -j4
+          make -j2
