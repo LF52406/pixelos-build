@@ -1,4 +1,4 @@
-name: PixelOS Mondrian Build
+name: PixelOS 15 Mondrian Build
 
 on:
   workflow_dispatch:
@@ -15,8 +15,6 @@ jobs:
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/lib/jvm
           sudo apt clean
           df -h
 
@@ -28,25 +26,26 @@ jobs:
           libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
           libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3
 
-      - name: Install repo
+      - name: Install repo tool
         run: |
           sudo curl https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
           sudo chmod a+x /usr/local/bin/repo
 
-      - name: Init Repo
+      - name: Init PixelOS 15
         run: |
           mkdir pixel
           cd pixel
-          repo init -u https://github.com/PixelOS-AOSP/manifest -b sixteen-qpr1
+          repo init -u https://github.com/PixelOS-AOSP/manifest -b fifteen
 
-      - name: Sync Source (Low Space Mode)
+      - name: Sync Source
         run: |
           cd pixel
           repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune -j2
 
-      - name: Build
+      - name: Build for mondrian
         run: |
           cd pixel
+          export BUILD_USERNAME=LF5
           source build/envsetup.sh
           lunch aosp_mondrian-userdebug
           make -j2
