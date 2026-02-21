@@ -42,6 +42,7 @@ jobs:
           LUNCH: ${{ github.event.inputs.lunch_target }}
           MAKE: ${{ github.event.inputs.make_command }}
         run: |
+          git remote set-url origin https://android.googlesource.com/platform/manifest
           crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- " \
           mkdir -p pixel && cd pixel && \
           repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen && \
@@ -56,6 +57,7 @@ jobs:
       - name: Pull Artifact (zip)
         if: always()
         run: |
+          git remote set-url origin https://android.googlesource.com/platform/manifest
           crave -k -c ${HOME}/.config/crave/crave.conf pull pixel/out/target/product/mondrian/*.zip || echo "No zip found, check build logs"
 
       - name: Upload Artifact to GitHub
