@@ -1,4 +1,4 @@
-name: PixelOS Crave Build
+name: PixelOS Mondrian Android 16 - Crave Build
 
 on:
   workflow_dispatch:
@@ -10,11 +10,11 @@ on:
       lunch_target:
         description: 'Lunch target'
         required: true
-        default: 'pixelos_mondrian-userdebug'  # Изменил на PixelOS-стиль, если нужно — верни aosp_mondrian-userdebug
+        default: 'pixelos_mondrian-userdebug'
       make_command:
         description: 'Make command'
         required: false
-        default: 'mka bacon -j$(nproc --all)'  # Добавил -j для скорости
+        default: 'mka bacon'
 
 jobs:
   build:
@@ -26,10 +26,9 @@ jobs:
 
       - name: Install Crave
         run: |
-          curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- -s || true
-          # Фикс command not found — добавляем путь вручную
-          echo "/usr/local/bin" >> $GITHUB_PATH
-          crave --version  # Проверка, должна показать версию
+          curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash
+          chmod +x crave
+          sudo mv crave /usr/local/bin/crave
 
       - name: Configure Crave
         env:
@@ -37,7 +36,6 @@ jobs:
         run: |
           mkdir -p ${HOME}/.config/crave
           echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
-          crave whoami  # Проверка логина
 
       - name: Run Build on Crave
         env:
@@ -45,28 +43,33 @@ jobs:
           MAKE: ${{ github.event.inputs.make_command }}
         run: |
           git remote set-url origin https://android.googlesource.com/platform/manifest
-          crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- \
-            "mkdir -p pixel && cd pixel && \
-            repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs && \
-            rm -rf .repo/local_manifests && \
-            mkdir -p .repo/local_manifests && \
-            curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && \
-            repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags && \
-            source build/envsetup.sh && \
-            lunch \$LUNCH && \
-            \$MAKE"
+          crave -k -c ${HOME}/.config/crave/crave.conf -v run \
+            ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} \
+            --no-patch -- bash -c '
+              set -e
+              mkdir -p rom && cd rom
+              repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen --git-lfs
+              mkdir -p .repo/local_manifests
+              curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml
+              repo sync -c -j$(nproc --all) --force-sync --no-tags --no-clone-bundle
+              source build/envsetup.sh
+              cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true
+              lunch $LUNCH || { echo "Lunch error: проверь mk-файлы в device/xiaomi/mondrian"; exit 1; }
+              export ALLOW_MISSING_DEPENDENCIES=true
+              $MAKE
+            '
 
       - name: Pull Artifact (zip)
         if: always()
         run: |
           git remote set-url origin https://android.googlesource.com/platform/manifest
-          crave -k -c ${HOME}/.config/crave/crave.conf pull pixel/out/target/product/mondrian/*.zip || echo "No zip found, check build logs"
+          crave -k -c ${HOME}/.config/crave/crave.conf pull rom/out/target/product/mondrian/*.zip || echo "No zip found, check build logs"
 
       - name: Upload Artifact to GitHub
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pixelos-mondrian-build
-          path: pixel/out/target/product/mondrian/*.zip  # Добавил путь к директории pixel/
+          path: "*.zip"
           if-no-files-found: warn
           retention-days: 7
