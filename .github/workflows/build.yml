@@ -1,20 +1,20 @@
 name: PixelOS Crave Build
 
 on:
-  workflow_dispatch:  # Запуск вручную из GitHub Actions
+  workflow_dispatch:
     inputs:
       clean_build:
         description: 'Clean build? (true/false)'
         required: false
         default: 'true'
       lunch_target:
-        description: 'Lunch target (e.g. pixelos_mondrian-userdebug)'
+        description: 'Lunch target'
         required: true
-        default: 'pixelos_mondrian-userdebug'
+        default: 'aosp_mondrian-userdebug'
       make_command:
-        description: 'Make command (e.g. mka bacon -j$(nproc --all))'
+        description: 'Make command'
         required: false
-        default: 'mka bacon -j$(nproc --all)'
+        default: 'mka bacon'
 
 jobs:
   build:
@@ -23,70 +23,46 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Install Crave CLI (manual, reliable method)
+      - name: Install Crave
         run: |
-          # Последняя стабильная версия на февраль 2026
-          CRAVE_VER="0.2-7193"
-          CRAVE_FILE="crave-${CRAVE_VER}-linux-amd64.bin"
-          CRAVE_URL="https://github.com/accupara/crave/releases/download/\( {CRAVE_VER}/ \){CRAVE_FILE}"
-
-          echo "Downloading Crave v${CRAVE_VER} from ${CRAVE_URL}"
-          curl -L -o crave "${CRAVE_URL}" || { echo "Download failed"; exit 1; }
-
-          ls -l crave
+          curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash
           chmod +x crave
           sudo mv crave /usr/local/bin/crave
 
-          # Ключевой момент: добавляем путь в GITHUB_PATH → crave будет виден во всех следующих шагах
-          echo "/usr/local/bin" >> $GITHUB_PATH
-
-          # Проверки
-          which crave
-          crave --version
-
-      - name: Crave Login
+      - name: Configure Crave
         env:
-          CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
+          CRAVE_CONF: ${{ secrets.CRAVE_CONF }}
         run: |
-          mkdir -p \~/.crave/config
-          echo "$CRAVE_TOKEN" > \~/.crave/config/crave.conf
-          crave whoami  # Должно показать твой аккаунт
-
-      - name: Setup Crave Project (если нужно)
-        run: |
-          crave remote --setup || true
+          mkdir -p ${HOME}/.config/crave
+          echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
 
       - name: Run Build on Crave
         env:
-          CLEAN: ${{ github.event.inputs.clean_build }}
           LUNCH: ${{ github.event.inputs.lunch_target }}
           MAKE: ${{ github.event.inputs.make_command }}
         run: |
-          crave run --no-patch \
-            ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} \
-            -- bash -c "
-              set -e
-              source build/envsetup.sh || { echo 'envsetup failed'; exit 1; }
-              repo sync -c -j$(nproc --all) --force-sync || true
-              lunch \$LUNCH || { echo 'Lunch failed — проверь device tree и mk-файлы'; exit 1; }
-              export ALLOW_MISSING_DEPENDENCIES=true
-              \$MAKE
-            "
+          crave run -k -c ${HOME}/.config/crave/crave.conf --no-patch -v -- " \
+          mkdir -p pixel && cd pixel && \
+          repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen && \
+          rm -rf .repo/local_manifests && \
+          mkdir -p .repo/local_manifests && \
+          curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && \
+          repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags && \
+          source build/envsetup.sh && \
+          lunch \$LUNCH && \
+          \$MAKE"
 
       - name: Pull Artifact (zip)
         if: always()
         run: |
-          crave pull out/target/product/mondrian/*mondrian*.zip || echo "No zip found, check build logs"
-          ls -la out/target/product/mondrian/ || true
+          crave pull -c ${HOME}/.config/crave/crave.conf pixel/out/target/product/mondrian/*.zip || echo "No zip found, check build logs"
 
       - name: Upload Artifact to GitHub
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pixelos-mondrian-build
-          path: out/target/product/mondrian/*.zip
+          path: "*.zip"
           if-no-files-found: warn
           retention-days: 7
