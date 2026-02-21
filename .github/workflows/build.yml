@@ -1,75 +1,90 @@
-name: PixelOS Crave Build
+name: PixelOS Mondrian - Crave Build
 
 on:
-  workflow_dispatch:  # Запуск вручную из GitHub Actions
+  workflow_dispatch:   # Запуск вручную (самый удобный для тестов)
     inputs:
-      clean_build:
+      clean:
         description: 'Clean build? (true/false)'
         required: false
         default: 'true'
       lunch_target:
-        description: 'Lunch target (e.g. pixelos_mondrian-userdebug)'
+        description: 'Lunch target'
         required: true
         default: 'pixelos_mondrian-userdebug'
-      make_command:
-        description: 'Make command (e.g. mka bacon -j$(nproc --all))'
+      make_cmd:
+        description: 'Make command'
         required: false
         default: 'mka bacon -j$(nproc --all)'
 
 jobs:
-  build:
-    runs-on: ubuntu-latest  # GitHub runner просто для старта, реальная сборка на Crave
+  build-on-crave:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout sources
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Полный клон нужен для repo sync и submodules
+          fetch-depth: 0
 
-      - name: Install Crave CLI
+      - name: Install Crave CLI (manual stable method)
         run: |
-          curl -sSL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- -s
-          crave --version
+          # Установка вручную — избегаем проблем с get_crave.sh и PATH
+          CRAVE_VERSION="0.2-7193"  # Актуальная на февраль 2026 — проверь на https://github.com/accupara/crave/releases/latest если нужно обновить
+          curl -L -o crave https://github.com/accupara/crave/releases/download/\( {CRAVE_VERSION}/crave- \){CRAVE_VERSION}-linux-amd64.bin
+          chmod +x crave
+          sudo mv crave /usr/local/bin/crave
+          # Добавляем путь в GITHUB_PATH — чтобы crave был виден во всех шагах
+          echo "/usr/local/bin" >> $GITHUB_PATH
+          crave --version   # Должно вывести версию — проверка
 
-      - name: Crave Login
+      - name: Crave Login with Token
         env:
-          CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}  # Добавь свой токен в Secrets!
+          CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
         run: |
+          mkdir -p \~/.crave/config
           echo "$CRAVE_TOKEN" > \~/.crave/config/crave.conf
-          crave whoami  # Проверка логина
+          crave whoami   # Проверка — должно показать твой username
 
-      - name: Setup Crave Project (если нужно)
+      - name: Setup Crave (project/remote)
         run: |
-          crave remote --setup || true  # Если уже настроено — пропустит
+          crave remote --setup || true   # Если уже настроено — не ошибка
 
-      - name: Run Build on Crave
+      - name: Run Build on Crave Servers
         env:
-          CLEAN: ${{ github.event.inputs.clean_build }}
+          CLEAN_BUILD: ${{ github.event.inputs.clean }}
           LUNCH: ${{ github.event.inputs.lunch_target }}
-          MAKE: ${{ github.event.inputs.make_command }}
+          MAKE: ${{ github.event.inputs.make_cmd }}
         run: |
-          crave run --no-patch \
-            ${{ inputs.clean_build == 'true' && '--clean' || '' }} \
-            -- bash -c "
+          crave run \
+            ${{ inputs.clean == 'true' && '--clean' || '' }} \
+            --no-patch \
+            -- bash -c '
               set -e
-              source build/envsetup.sh
-              repo sync -c -j$(nproc --all) --force-sync || true  # Если sync уже был — пропустит
-              lunch $LUNCH
+              echo "Starting build environment..."
+              source build/envsetup.sh || { echo "envsetup failed"; exit 1; }
+              repo sync -c -j$(nproc --all) --force-sync --no-tags || echo "Repo sync skipped/partial"
+              lunch $LUNCH || { echo "Lunch failed — check device mk files"; exit 1; }
               export ALLOW_MISSING_DEPENDENCIES=true
+              echo "Starting compilation..."
               $MAKE
-            "
+            '
 
-      - name: Pull Artifact (zip)
-        if: always()
+      - name: Pull the Built ZIP (if success)
+        if: success()
         run: |
-          crave pull out/target/product/mondrian/*mondrian*.zip || echo "No zip found, check logs"
+          crave pull out/target/product/mondrian/pixelos_mondrian-*.zip || echo "ZIP pull failed — check build logs"
           ls -la out/target/product/mondrian/ || true
 
-      - name: Upload Artifact to GitHub
+      - name: Upload Artifact (ZIP file)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pixelos-mondrian-build
+          name: pixelos-mondrian-rom
           path: out/target/product/mondrian/*.zip
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 5
+
+      - name: Show Build Logs (last lines if failed)
+        if: failure()
+        run: |
+          crave logs last || echo "No logs available"
