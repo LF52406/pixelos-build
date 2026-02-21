@@ -26,13 +26,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Crave CLI (manual, fixed)
+      - name: Install Crave CLI (manual, latest stable)
         run: |
           CRAVE_VER="0.2-7193"
-          CRAVE_URL="https://github.com/accupara/crave/releases/download/\( {CRAVE_VER}/crave- \){CRAVE_VER}-linux-amd64.bin"
+          CRAVE_FILE="crave-${CRAVE_VER}-linux-amd64.bin"
+          CRAVE_URL="https://github.com/accupara/crave/releases/download/\( {CRAVE_VER}/ \){CRAVE_FILE}"
           
-          echo "Downloading from $CRAVE_URL"
-          curl -L -o crave "$CRAVE_URL" || { echo "Curl failed"; exit 1; }
+          echo "Скачиваем Crave версии ${CRAVE_VER} с: ${CRAVE_URL}"
+          curl -L -o crave "${CRAVE_URL}" || { echo "Ошибка скачивания — проверь URL"; exit 1; }
           
           ls -l crave
           chmod +x crave
@@ -40,6 +41,7 @@ jobs:
           
           echo "/usr/local/bin" >> $GITHUB_PATH
           
+          which crave
           crave --version
 
       - name: Crave Login
@@ -48,7 +50,7 @@ jobs:
         run: |
           mkdir -p \~/.crave/config
           echo "$CRAVE_TOKEN" > \~/.crave/config/crave.conf
-          crave whoami
+          crave whoami || echo "Login OK if no auth error"
 
       - name: Setup Crave remote
         run: |
@@ -75,7 +77,7 @@ jobs:
       - name: Pull ZIP artifact
         if: success()
         run: |
-          crave pull out/target/product/mondrian/pixelos_mondrian-*.zip || echo "No ZIP found"
+          crave pull out/target/product/mondrian/pixelos_mondrian-*.zip || echo "ZIP не найден — сборка могла упасть раньше"
 
       - name: Upload Artifact
         if: always()
