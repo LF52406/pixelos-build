@@ -1,3 +1,75 @@
-      - name: Запуск сборки на сервере
+name: PixelOS Crave Build
+
+on:
+  workflow_dispatch:  # Запуск вручную из GitHub Actions
+    inputs:
+      clean_build:
+        description: 'Clean build? (true/false)'
+        required: false
+        default: 'true'
+      lunch_target:
+        description: 'Lunch target (e.g. pixelos_mondrian-userdebug)'
+        required: true
+        default: 'pixelos_mondrian-userdebug'
+      make_command:
+        description: 'Make command (e.g. mka bacon -j$(nproc --all))'
+        required: false
+        default: 'mka bacon -j$(nproc --all)'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # GitHub runner просто для старта, реальная сборка на Crave
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Полный клон нужен для repo sync и submodules
+
+      - name: Install Crave CLI
         run: |
-          ./crave run --no-patch -v -- "mkdir -p pixel && cd pixel && repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen && rm -rf .repo/local_manifests && mkdir -p .repo/local_manifests && curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags && source build/envsetup.sh && lunch aosp_mondrian-userdebug && mka bacon"
+          curl -sSL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- -s
+          crave --version
+
+      - name: Crave Login
+        env:
+          CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}  # Добавь свой токен в Secrets!
+        run: |
+          echo "$CRAVE_TOKEN" > \~/.crave/config/crave.conf
+          crave whoami  # Проверка логина
+
+      - name: Setup Crave Project (если нужно)
+        run: |
+          crave remote --setup || true  # Если уже настроено — пропустит
+
+      - name: Run Build on Crave
+        env:
+          CLEAN: ${{ github.event.inputs.clean_build }}
+          LUNCH: ${{ github.event.inputs.lunch_target }}
+          MAKE: ${{ github.event.inputs.make_command }}
+        run: |
+          crave run --no-patch \
+            ${{ inputs.clean_build == 'true' && '--clean' || '' }} \
+            -- bash -c "
+              set -e
+              source build/envsetup.sh
+              repo sync -c -j$(nproc --all) --force-sync || true  # Если sync уже был — пропустит
+              lunch $LUNCH
+              export ALLOW_MISSING_DEPENDENCIES=true
+              $MAKE
+            "
+
+      - name: Pull Artifact (zip)
+        if: always()
+        run: |
+          crave pull out/target/product/mondrian/*mondrian*.zip || echo "No zip found, check logs"
+          ls -la out/target/product/mondrian/ || true
+
+      - name: Upload Artifact to GitHub
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixelos-mondrian-build
+          path: out/target/product/mondrian/*.zip
+          if-no-files-found: warn
+          retention-days: 7
