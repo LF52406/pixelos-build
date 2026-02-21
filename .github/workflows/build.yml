@@ -24,7 +24,7 @@ jobs:
 
       - name: External Build
         run: |
-          ./crave run --no-patch -v -- " \
+          ./crave run -k -c ${HOME}/.config/crave/crave.conf --no-patch -v -- " \
           mkdir -p pixel && cd pixel && \
           repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen && \
           rm -rf .repo/local_manifests && \
