@@ -7,6 +7,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # ШАГ 1: Клонируем твой репозиторий (ОБЯЗАТЕЛЬНО)
+      - name: Checkout your code
+        uses: actions/checkout@v4
+
       - name: Скачиваем Crave
         run: |
           curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash
@@ -17,16 +21,19 @@ jobs:
           CRAVE_CONF: ${{ secrets.CRAVE_CONF }}
         run: |
           mkdir -p ${HOME}/.config/crave
-          echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
+          # Мы используем одинарные кавычки, чтобы символы в токене не потерялись
+          echo '${{ secrets.CRAVE_CONF }}' > ${HOME}/.config/crave/crave.conf
 
       - name: Запуск сборки на сервере
         run: |
           ./crave run --no-patch -- " \
           mkdir -p pixel && cd pixel && \
           repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen && \
-          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags && \
+          rm -rf .repo/local_manifests && \
+          mkdir -p .repo/local_manifests && \
+          curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && \
+          repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags && \
           source build/envsetup.sh && \
           lunch aosp_mondrian-userdebug && \
           mka bacon \
           "
-          
