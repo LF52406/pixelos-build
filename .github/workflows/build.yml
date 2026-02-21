@@ -1,7 +1,7 @@
 name: PixelOS Mondrian - Crave Build
 
 on:
-  workflow_dispatch:   # Запуск вручную (самый удобный для тестов)
+  workflow_dispatch:
     inputs:
       clean:
         description: 'Clean build? (true/false)'
@@ -26,30 +26,35 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Crave CLI (manual stable method)
+      - name: Install Crave CLI (manual, fixed)
         run: |
-          # Установка вручную — избегаем проблем с get_crave.sh и PATH
-          CRAVE_VERSION="0.2-7193"  # Актуальная на февраль 2026 — проверь на https://github.com/accupara/crave/releases/latest если нужно обновить
-          curl -L -o crave https://github.com/accupara/crave/releases/download/\( {CRAVE_VERSION}/crave- \){CRAVE_VERSION}-linux-amd64.bin
+          CRAVE_VER="0.2-7193"
+          CRAVE_URL="https://github.com/accupara/crave/releases/download/\( {CRAVE_VER}/crave- \){CRAVE_VER}-linux-amd64.bin"
+          
+          echo "Downloading from $CRAVE_URL"
+          curl -L -o crave "$CRAVE_URL" || { echo "Curl failed"; exit 1; }
+          
+          ls -l crave
           chmod +x crave
           sudo mv crave /usr/local/bin/crave
-          # Добавляем путь в GITHUB_PATH — чтобы crave был виден во всех шагах
+          
           echo "/usr/local/bin" >> $GITHUB_PATH
-          crave --version   # Должно вывести версию — проверка
+          
+          crave --version
 
-      - name: Crave Login with Token
+      - name: Crave Login
         env:
           CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
         run: |
           mkdir -p \~/.crave/config
           echo "$CRAVE_TOKEN" > \~/.crave/config/crave.conf
-          crave whoami   # Проверка — должно показать твой username
+          crave whoami
 
-      - name: Setup Crave (project/remote)
+      - name: Setup Crave remote
         run: |
-          crave remote --setup || true   # Если уже настроено — не ошибка
+          crave remote --setup || true
 
-      - name: Run Build on Crave Servers
+      - name: Run Build on Crave
         env:
           CLEAN_BUILD: ${{ github.event.inputs.clean }}
           LUNCH: ${{ github.event.inputs.lunch_target }}
@@ -60,31 +65,22 @@ jobs:
             --no-patch \
             -- bash -c '
               set -e
-              echo "Starting build environment..."
-              source build/envsetup.sh || { echo "envsetup failed"; exit 1; }
-              repo sync -c -j$(nproc --all) --force-sync --no-tags || echo "Repo sync skipped/partial"
-              lunch $LUNCH || { echo "Lunch failed — check device mk files"; exit 1; }
+              source build/envsetup.sh || exit 1
+              repo sync -c -j$(nproc --all) --force-sync --no-tags || true
+              lunch $LUNCH || exit 1
               export ALLOW_MISSING_DEPENDENCIES=true
-              echo "Starting compilation..."
               $MAKE
             '
 
-      - name: Pull the Built ZIP (if success)
+      - name: Pull ZIP artifact
         if: success()
         run: |
-          crave pull out/target/product/mondrian/pixelos_mondrian-*.zip || echo "ZIP pull failed — check build logs"
-          ls -la out/target/product/mondrian/ || true
+          crave pull out/target/product/mondrian/pixelos_mondrian-*.zip || echo "No ZIP found"
 
-      - name: Upload Artifact (ZIP file)
+      - name: Upload Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pixelos-mondrian-rom
           path: out/target/product/mondrian/*.zip
           if-no-files-found: warn
-          retention-days: 5
-
-      - name: Show Build Logs (last lines if failed)
-        if: failure()
-        run: |
-          crave logs last || echo "No logs available"
