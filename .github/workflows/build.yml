@@ -1,51 +1,32 @@
-name: PixelOS 15 Mondrian Build
+name: PixelOS 16 Mondrian Build
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 360
-
+    runs-on: ubuntu-latest
     steps:
-      - name: Aggressive Cleanup
+      - name: Скачиваем Crave
         run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache
-          sudo apt clean
-          df -h
+          curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash
+          chmod +x crave
 
-      - name: Install Dependencies
+      - name: Настраиваем конфиг
+        env:
+          CRAVE_CONF: ${{ secrets.CRAVE_CONF }}
         run: |
-          sudo apt update
-          sudo apt install -y git-core gnupg flex bison build-essential zip curl \
-          zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-          libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
-          libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3
+          mkdir -p ${HOME}/.config/crave
+          echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
 
-      - name: Install repo tool
+      - name: Запуск сборки на сервере
         run: |
-          sudo curl https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
-          sudo chmod a+x /usr/local/bin/repo
-
-      - name: Init PixelOS 15
-        run: |
-          mkdir pixel
-          cd pixel
-          repo init -u https://github.com/PixelOS-AOSP/manifest -b fifteen
-
-      - name: Sync Source
-        run: |
-          cd pixel
-          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune -j2
-
-      - name: Build for mondrian
-        run: |
-          cd pixel
-          export BUILD_USERNAME=LF5
-          source build/envsetup.sh
-          lunch aosp_mondrian-userdebug
-          make -j2
+          ./crave run --no-patch -- " \
+          mkdir -p pixel && cd pixel && \
+          repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen && \
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags && \
+          source build/envsetup.sh && \
+          lunch aosp_mondrian-userdebug && \
+          mka bacon \
+          "
+          
