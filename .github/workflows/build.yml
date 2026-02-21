@@ -18,29 +18,46 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # GitHub runner просто для старта, реальная сборка на Crave
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Полный клон нужен для repo sync и submodules
+          fetch-depth: 0
 
-      - name: Install Crave CLI
+      - name: Install Crave CLI (manual, reliable method)
         run: |
-          curl -sSL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- -s
+          # Последняя стабильная версия на февраль 2026
+          CRAVE_VER="0.2-7193"
+          CRAVE_FILE="crave-${CRAVE_VER}-linux-amd64.bin"
+          CRAVE_URL="https://github.com/accupara/crave/releases/download/\( {CRAVE_VER}/ \){CRAVE_FILE}"
+
+          echo "Downloading Crave v${CRAVE_VER} from ${CRAVE_URL}"
+          curl -L -o crave "${CRAVE_URL}" || { echo "Download failed"; exit 1; }
+
+          ls -l crave
+          chmod +x crave
+          sudo mv crave /usr/local/bin/crave
+
+          # Ключевой момент: добавляем путь в GITHUB_PATH → crave будет виден во всех следующих шагах
+          echo "/usr/local/bin" >> $GITHUB_PATH
+
+          # Проверки
+          which crave
           crave --version
 
       - name: Crave Login
         env:
-          CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}  # Добавь свой токен в Secrets!
+          CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
         run: |
+          mkdir -p \~/.crave/config
           echo "$CRAVE_TOKEN" > \~/.crave/config/crave.conf
-          crave whoami  # Проверка логина
+          crave whoami  # Должно показать твой аккаунт
 
       - name: Setup Crave Project (если нужно)
         run: |
-          crave remote --setup || true  # Если уже настроено — пропустит
+          crave remote --setup || true
 
       - name: Run Build on Crave
         env:
@@ -49,20 +66,20 @@ jobs:
           MAKE: ${{ github.event.inputs.make_command }}
         run: |
           crave run --no-patch \
-            ${{ inputs.clean_build == 'true' && '--clean' || '' }} \
+            ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} \
             -- bash -c "
               set -e
-              source build/envsetup.sh
-              repo sync -c -j$(nproc --all) --force-sync || true  # Если sync уже был — пропустит
-              lunch $LUNCH
+              source build/envsetup.sh || { echo 'envsetup failed'; exit 1; }
+              repo sync -c -j$(nproc --all) --force-sync || true
+              lunch \$LUNCH || { echo 'Lunch failed — проверь device tree и mk-файлы'; exit 1; }
               export ALLOW_MISSING_DEPENDENCIES=true
-              $MAKE
+              \$MAKE
             "
 
       - name: Pull Artifact (zip)
         if: always()
         run: |
-          crave pull out/target/product/mondrian/*mondrian*.zip || echo "No zip found, check logs"
+          crave pull out/target/product/mondrian/*mondrian*.zip || echo "No zip found, check build logs"
           ls -la out/target/product/mondrian/ || true
 
       - name: Upload Artifact to GitHub
