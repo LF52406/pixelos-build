@@ -24,13 +24,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Crave (manual, no auto-update)
+      - name: Install Crave (manual fixed version)
         run: |
           curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
           chmod +x crave
-          sudo mv crave /usr/local/bin/crave || mv crave /usr/local/bin/crave
+          sudo mv crave /usr/local/bin/crave 2>/dev/null || mv crave /usr/local/bin/crave || echo "mv failed, trying alternative"
           echo "/usr/local/bin" >> $GITHUB_PATH
-          crave --version || echo "crave version check failed"
+          ls -l /usr/local/bin/crave || echo "crave not in /usr/local/bin"
+          crave --version || echo "crave version check failed - check logs"
 
       - name: Configure Crave
         env:
@@ -45,7 +46,7 @@ jobs:
           git remote set-url origin https://android.googlesource.com/platform/manifest
           crave -k -c ${HOME}/.config/crave/crave.conf -v run \
             ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} \
-            --no-patch -- \
+            --no-patch --detached \
             "${{ github.event.inputs.clean_build == 'true' && 'rm -rf .repo && ' || '' }} \
             repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs && \
             rm -rf .repo/local_manifests && \
@@ -64,7 +65,7 @@ jobs:
           git remote set-url origin https://android.googlesource.com/platform/manifest
           crave -k -c ${HOME}/.config/crave/crave.conf pull out/target/product/mondrian/*.zip || \
           crave -k -c ${HOME}/.config/crave/crave.conf pull out/target/product/mondrian/*mondrian*.zip || \
-          echo "No zip found - сборка упала раньше"
+          ls -la out/target/product/mondrian/ || echo "out directory not found"
 
       - name: Upload Artifact to GitHub
         if: always()
