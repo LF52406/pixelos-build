@@ -37,10 +37,35 @@ jobs:
           mkdir -p ${HOME}/.config/crave
           echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
 
+      - name: Create Build Script
+        run: |
+          cat << 'EOF' > build.sh
+          #!/bin/bash
+          set -e
+          
+          if [ "${{ github.event.inputs.clean_build }}" = "true" ]; then
+            echo "🔥 CLEAN BUILD: Убиваем кэш .repo..."
+            rm -rf .repo
+          fi
+          
+          repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen --git-lfs
+          mkdir -p .repo/local_manifests
+          curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml
+          
+          repo sync -c -j$(nproc --all) --force-sync --no-tags --no-clone-bundle || repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --fail-fast
+          
+          source build/envsetup.sh
+          cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true
+          
+          lunch ${{ github.event.inputs.lunch_target }}
+          ${{ github.event.inputs.make_command }}
+          EOF
+          chmod +x build.sh
+
       - name: Run Build on Crave
         run: |
           git remote set-url origin https://android.googlesource.com/platform/manifest
-          crave -k -c ${HOME}/.config/crave/crave.conf -v run ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} --no-patch -- '${{ github.event.inputs.clean_build == 'true' && 'rm -rf .repo && ' || '' }}repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen --git-lfs && mkdir -p .repo/local_manifests && curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && (repo sync -c -j$(nproc --all) --force-sync --no-tags --no-clone-bundle || repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --fail-fast) && source build/envsetup.sh && (cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true) && lunch ${{ github.event.inputs.lunch_target }} && ${{ github.event.inputs.make_command }}'
+          crave -k -c ${HOME}/.config/crave/crave.conf -v run ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} --no-patch -- ./build.sh
 
       - name: Pull Artifact (zip)
         if: always()
