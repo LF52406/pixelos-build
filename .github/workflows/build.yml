@@ -26,16 +26,11 @@ jobs:
 
       - name: Install Crave
         run: |
-          curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- -s || true
-          if [ -f crave ]; then
-            chmod +x crave
-            sudo mv crave /usr/local/bin/crave || mv crave /usr/local/bin/crave
-            echo "/usr/local/bin" >> $GITHUB_PATH
-            crave --version || echo "crave version check failed"
-          else
-            echo "crave binary not downloaded - script failed"
-            exit 1
-          fi
+          curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash
+          chmod +x crave
+          sudo mv crave /usr/local/bin/crave
+          echo "/usr/local/bin" >> $GITHUB_PATH
+          crave --version || echo "crave version check failed - check logs"
 
       - name: Configure Crave
         env:
@@ -47,24 +42,20 @@ jobs:
 
       - name: Run Build on Crave
         run: |
+          # ВАЖНО: Обманываем Crave, чтобы он думал, что мы собираем системный Android
+          git remote set-url origin https://android.googlesource.com/platform/manifest
+          
           crave -k -c ${HOME}/.config/crave/crave.conf -v run \
             ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} \
             --no-patch -- \
-            "${{ github.event.inputs.clean_build == 'true' && 'rm -rf .repo && ' || '' }} \
-            repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs && \
-            rm -rf .repo/local_manifests && \
-            mkdir -p .repo/local_manifests && \
-            curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && \
-            (repo sync -c -j\$(nproc --all) --force-sync --no-tags --no-clone-bundle || repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --fail-fast) && \
-            source build/envsetup.sh && \
-            (breakfast mondrian || true) && \
-            (cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true) && \
-            lunch ${{ github.event.inputs.lunch_target }} && \
-            ${{ github.event.inputs.make_command }}"
+            "${{ github.event.inputs.clean_build == 'true' && 'rm -rf .repo && ' || '' }}repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs && rm -rf .repo/local_manifests && mkdir -p .repo/local_manifests && curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && (repo sync -c -j\$(nproc --all) --force-sync --no-tags --no-clone-bundle || repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --fail-fast) && source build/envsetup.sh && (breakfast mondrian || true) && (cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true) && lunch ${{ github.event.inputs.lunch_target }} && ${{ github.event.inputs.make_command }}"
 
       - name: Pull Artifact (zip)
         if: always()
         run: |
+          # Здесь тоже нужен этот хак, иначе команда pull не найдет правильный сервер
+          git remote set-url origin https://android.googlesource.com/platform/manifest
+          
           crave -k -c ${HOME}/.config/crave/crave.conf pull out/target/product/mondrian/*.zip || \
           crave -k -c ${HOME}/.config/crave/crave.conf pull out/target/product/mondrian/*mondrian*.zip || \
           echo "No zip found - сборка упала раньше"
