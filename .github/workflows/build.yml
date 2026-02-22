@@ -27,11 +27,8 @@ jobs:
       - name: Install Crave
         run: |
           curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- -s || true
-          # Фикс PATH — Crave обычно в /usr/local/bin
           echo "/usr/local/bin" >> $GITHUB_PATH
-          # Проверка
-          which crave || echo "crave not found in PATH"
-          crave --version || echo "crave version check failed"
+          crave --version || echo "crave version check failed - check logs"
 
       - name: Configure Crave
         env:
@@ -39,7 +36,7 @@ jobs:
         run: |
           mkdir -p ${HOME}/.config/crave
           echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
-          crave whoami
+          crave whoami || echo "Crave login check failed"
 
       - name: Run Build on Crave
         run: |
@@ -53,15 +50,17 @@ jobs:
             curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && \
             repo sync -c -j\$(nproc --all) --force-sync --no-tags --no-clone-bundle || repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --fail-fast && \
             source build/envsetup.sh && \
-            (breakfast mondrian || true) && \
-            (cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true) && \
+            breakfast mondrian || true && \
+            cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true && \
             lunch ${{ github.event.inputs.lunch_target }} && \
             ${{ github.event.inputs.make_command }}"
 
       - name: Pull Artifact (zip)
         if: always()
         run: |
-          crave -k -c ${HOME}/.config/crave/crave.conf pull pixel/out/target/product/mondrian/*.zip || echo "No zip found, check build logs"
+          crave -k -c ${HOME}/.config/crave/crave.conf pull pixel/out/target/product/mondrian/*.zip || \
+          crave -k -c ${HOME}/.config/crave/crave.conf pull pixel/out/target/product/mondrian/*mondrian*.zip || \
+          echo "No zip found - сборка упала раньше"
 
       - name: Upload Artifact to GitHub
         if: always()
