@@ -14,7 +14,7 @@ on:
       make_command:
         description: 'Make command'
         required: false
-        default: 'mka bacon -j$(nproc --all)'
+        default: 'export ALLOW_MISSING_DEPENDENCIES=true && mka bacon -j$(nproc --all)'
 
 jobs:
   build:
@@ -25,14 +25,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Crave (самый надёжный способ)
+      - name: Install Crave (manual fixed)
         run: |
           curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
           chmod +x crave
           sudo mv crave /usr/local/bin/crave || mv crave /usr/local/bin/crave
           echo "/usr/local/bin" >> $GITHUB_PATH
-          which crave || echo "crave not in PATH"
-          crave --version || echo "crave version failed"
+          crave --version
 
       - name: Configure Crave
         env:
@@ -40,14 +39,16 @@ jobs:
         run: |
           mkdir -p \~/.crave/config
           echo "$CRAVE_CONF" > \~/.crave/config/crave.conf
-          crave whoami || echo "login failed"
+          crave whoami
 
       - name: Run Build on Crave
         run: |
           git remote set-url origin https://android.googlesource.com/platform/manifest
-          crave -k -c \~/.crave/config/crave.conf -v run \
+          crave run \
+            --force \
+            --no-patch \
             ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} \
-            --no-patch -- bash -c "
+            -- bash -c "
               rm -rf .repo && \
               repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs && \
               rm -rf .repo/local_manifests && \
@@ -58,15 +59,16 @@ jobs:
               breakfast mondrian || true && \
               cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true && \
               lunch ${{ github.event.inputs.lunch_target }} || echo 'LUNCH FAILED' && \
-              ${{ github.event.inputs.make_command }} || echo 'MAKE FAILED'
+              ${{ github.event.inputs.make_command }} || echo 'MAKE FAILED' && \
+              find out/target/product -name '*.zip' -exec echo 'Found ZIP:' {} \; || echo 'No ZIP found!'
             "
 
       - name: Pull Artifact (zip)
         if: always()
         run: |
           git remote set-url origin https://android.googlesource.com/platform/manifest
-          crave -k -c \~/.crave/config/crave.conf pull out/target/product/mondrian/*.zip || \
-          crave -k -c \~/.crave/config/crave.conf pull out/target/product/mondrian/*mondrian*.zip || \
+          crave pull out/target/product/mondrian/*.zip || \
+          crave pull out/target/product/mondrian/*mondrian*.zip || \
           ls -la out/target/product/mondrian/ || echo "No out dir"
 
       - name: Upload Artifact to GitHub
