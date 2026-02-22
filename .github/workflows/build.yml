@@ -24,7 +24,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Crave (manual reliable method)
+      - name: Install Crave (manual, no auto-update)
         run: |
           curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
           chmod +x crave
@@ -45,7 +45,7 @@ jobs:
           git remote set-url origin https://android.googlesource.com/platform/manifest
           crave -k -c ${HOME}/.config/crave/crave.conf -v run \
             ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} \
-            --no-patch --non-interactive \
+            --no-patch -- \
             "${{ github.event.inputs.clean_build == 'true' && 'rm -rf .repo && ' || '' }} \
             repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs && \
             rm -rf .repo/local_manifests && \
