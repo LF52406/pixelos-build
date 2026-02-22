@@ -40,11 +40,7 @@ jobs:
       - name: Run Build on Crave
         run: |
           git remote set-url origin https://android.googlesource.com/platform/manifest
-          
-          # Упаковываем все команды в одну жесткую строку, чтобы парсер Crave ничего не "проглотил"
-          BUILD_CMD="${{ github.event.inputs.clean_build == 'true' && 'rm -rf .repo && ' || '' }}repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen --git-lfs && mkdir -p .repo/local_manifests && curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && (repo sync -c -j\$(nproc --all) --force-sync --no-tags --no-clone-bundle || repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --fail-fast) && source build/envsetup.sh && (cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true) && lunch ${{ github.event.inputs.lunch_target }} && ${{ github.event.inputs.make_command }}"
-          
-          crave -k -c ${HOME}/.config/crave/crave.conf -v run ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} --no-patch -- "$BUILD_CMD"
+          crave -k -c ${HOME}/.config/crave/crave.conf -v run ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} --no-patch -- '${{ github.event.inputs.clean_build == 'true' && 'rm -rf .repo && ' || '' }}repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen --git-lfs && mkdir -p .repo/local_manifests && curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/mondrian.xml -o .repo/local_manifests/mondrian.xml && (repo sync -c -j$(nproc --all) --force-sync --no-tags --no-clone-bundle || repo sync -c -j1 --force-sync --no-tags --no-clone-bundle --fail-fast) && source build/envsetup.sh && (cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true) && lunch ${{ github.event.inputs.lunch_target }} && ${{ github.event.inputs.make_command }}'
 
       - name: Pull Artifact (zip)
         if: always()
