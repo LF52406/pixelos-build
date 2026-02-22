@@ -27,10 +27,15 @@ jobs:
       - name: Install Crave
         run: |
           curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- -s || true
-          chmod +x crave
-          sudo mv crave /usr/local/bin/crave
-          echo "/usr/local/bin" >> $GITHUB_PATH
-          crave --version || echo "crave version check failed"
+          if [ -f crave ]; then
+            chmod +x crave
+            sudo mv crave /usr/local/bin/crave || mv crave /usr/local/bin/crave
+            echo "/usr/local/bin" >> $GITHUB_PATH
+            crave --version || echo "crave version check failed"
+          else
+            echo "crave binary not downloaded - script failed"
+            exit 1
+          fi
 
       - name: Configure Crave
         env:
