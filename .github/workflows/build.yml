@@ -11,27 +11,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Crave
-        run: |
-          curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
-          chmod +x crave
-          sudo mv crave /usr/local/bin/crave || mv crave /usr/local/bin/crave
-          echo "/usr/local/bin" >> $GITHUB_PATH
-          crave --version
-
       - name: Configure Crave
         env:
           CRAVE_CONF: ${{ secrets.CRAVE_CONF }}
         run: |
           mkdir -p ${HOME}/.config/crave
           echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
-          crave whoami
 
-      - name: Run Build Script on Crave
+      - name: Run Build on Crave
         run: |
-          crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
+          curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
+          chmod +x crave
+          ./crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
 
-      - name: Upload Artifact
+      - name: Pull Build Artifacts
         if: always()
         run: |
-          crave -k -c ${HOME}/.config/crave/crave.conf pull out/target/product/mondrian/*.zip || echo "No zip found"
+          curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
+          chmod +x crave
+          ./crave -k -c ${HOME}/.config/crave/crave.conf pull out/target/product/mondrian/*.zip || echo "No zip found"
