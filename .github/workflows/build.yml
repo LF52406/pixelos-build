@@ -17,7 +17,7 @@ jobs:
           chmod +x crave
           sudo mv crave /usr/local/bin/crave || mv crave /usr/local/bin/crave
           echo "/usr/local/bin" >> $GITHUB_PATH
-          crave --version || echo "crave version check failed"
+          crave --version
 
       - name: Configure Crave
         env:
@@ -25,15 +25,10 @@ jobs:
         run: |
           mkdir -p ${HOME}/.config/crave
           echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
-          crave whoami || echo "Crave login check failed"
+          crave whoami
 
       - name: Run Build Script on Crave
         run: |
-          # Обманка для Crave, чтобы проект прошел валидацию
-          git remote set-url origin https://github.com/PixelOS-AOSP/android_manifest.git
-          
-          # Скачиваем скрипт и запускаем его
-          curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/build.sh -o build.sh
           crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
 
       - name: Upload Artifact
