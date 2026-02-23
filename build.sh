@@ -28,4 +28,3 @@ repo sync -c -j$(nproc --all) --force-sync --no-tags --no-clone-bundle
 source build/envsetup.sh
 lunch pixelos_mondrian-userdebug
 mka bacon -j$(nproc --all)
-
