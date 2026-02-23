@@ -1,32 +1,81 @@
-name: PixelOS Mondrian Build
+name: PixelOS Mondrian Build (ULTRA)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure Crave
-        env:
-          CRAVE_CONF: ${{ secrets.CRAVE_CONF }}
+      - name: Setup 20GB Swap
         run: |
-          mkdir -p ${HOME}/.config/crave
-          echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
+          sudo fallocate -l 20G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
-      - name: Run Build on Crave
+      - name: Aggressive Disk Cleanup (Before Build)
         run: |
-          curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
-          chmod +x crave
-          ./crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker image prune -a -f || true
+          sudo apt clean
+          df -h
 
-      - name: Pull Build Artifacts
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib \
+          gcc-multilib git git-lfs gnupg gperf imagemagick lib32ncurses5-dev \
+          lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev \
+          libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
+          schedtool squashfs-tools xsltproc zip zlib1g-dev python3
+
+      - name: Install repo
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod +x ~/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Ultra Build Optimization
+        run: |
+          echo "USE_CCACHE=1" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=5G" >> $GITHUB_ENV
+          echo "NINJA_ARGS=-j3" >> $GITHUB_ENV
+          echo "SOONG_JAVA_HEAP_SIZE=4096" >> $GITHUB_ENV
+          echo "WITH_DEXPREOPT_DEBUG_INFO=false" >> $GITHUB_ENV
+          ccache -M 5G || true
+
+      - name: Build
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Upload ROM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixelOS-mondrian
+          path: out/target/product/mondrian/*.zip
+          if-no-files-found: ignore
+
+      - name: Maximum Cleanup
         if: always()
         run: |
-          curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
-          chmod +x crave
-          ./crave -k -c ${HOME}/.config/crave/crave.conf pull out/target/product/mondrian/*.zip || echo "No zip found"
+          sudo swapoff /swapfile || true
+          sudo rm -f /swapfile || true
+          rm -rf out || true
+          rm -rf .repo || true
+          rm -rf $HOME/.ccache || true
+          sudo apt clean || true
+          sudo rm -rf /var/lib/apt/lists/* || true
+          df -h
