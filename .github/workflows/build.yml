@@ -1,4 +1,4 @@
-name: PixelOS Mondrian Build
+name: PixelOS Mondrian Local Build
 
 on:
   workflow_dispatch:
@@ -52,7 +52,7 @@ jobs:
           echo "USE_CCACHE=1" >> $GITHUB_ENV
           echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
           echo "CCACHE_MAXSIZE=5G" >> $GITHUB_ENV
-          echo "NINJA_ARGS=-j3" >> $GITHUB_ENV
+          echo "NINJA_ARGS=-j$(nproc --all)" >> $GITHUB_ENV
           echo "SOONG_JAVA_HEAP_SIZE=4096" >> $GITHUB_ENV
           echo "WITH_DEXPREOPT_DEBUG_INFO=false" >> $GITHUB_ENV
           ccache -M 5G || true
