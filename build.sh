@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs
+repo init -u https://github.com/LF52406/android_manifest.git -b sixteen-qpr2 --git-lfs
 
 rm -rf .repo/local_manifests
 mkdir -p .repo/local_manifests
