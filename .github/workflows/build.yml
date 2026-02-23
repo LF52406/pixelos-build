@@ -1,4 +1,4 @@
-name: PixelOS Mondrian Build (ULTRA)
+name: PixelOS Mondrian Build
 
 on:
   workflow_dispatch:
@@ -11,22 +11,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup 20GB Swap
+      - name: Setup Swap
         run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile || true
           sudo fallocate -l 20G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
           free -h
 
-      - name: Aggressive Disk Cleanup (Before Build)
+      - name: Free Disk Space
         run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
           sudo docker image prune -a -f || true
-          sudo apt clean
+          sudo apt clean || true
           df -h
 
       - name: Install dependencies
@@ -45,7 +47,7 @@ jobs:
           chmod +x ~/bin/repo
           echo "$HOME/bin" >> $GITHUB_PATH
 
-      - name: Ultra Build Optimization
+      - name: Set Build Environment
         run: |
           echo "USE_CCACHE=1" >> $GITHUB_ENV
           echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
@@ -68,7 +70,7 @@ jobs:
           path: out/target/product/mondrian/*.zip
           if-no-files-found: ignore
 
-      - name: Maximum Cleanup
+      - name: Cleanup
         if: always()
         run: |
           sudo swapoff /swapfile || true
