@@ -28,13 +28,17 @@ jobs:
 
       - name: Run Build inside Crave Cloud
         run: |
-          # Конфиг проекта для PixelOS
+          # 1. Создаем конфиг проекта (ID 82 = PixelOS)
           cat << 'EOF' > crave.yaml
           Version: 1
           DefaultProjectID: 82
           EOF
           
-          # Запуск сборки без ошибочных аргументов
+          # 2. ПОДМЕНА: Заставляем Crave думать, что мы — официальный проект PixelOS
+          # Это решает проблему "could not find matching projects"
+          git remote set-url origin https://github.com/PixelOS-AOSP/android_manifest.git
+          
+          # 3. Запуск сборки
           /usr/local/bin/crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
 
       - name: Upload Artifact
