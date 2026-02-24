@@ -28,14 +28,11 @@ jobs:
 
       - name: Run Build inside Crave Cloud
         run: |
-          # Создаем обязательный файл проекта
+          # Конфиг проекта для PixelOS
           cat << 'EOF' > crave.yaml
           Version: 1
           DefaultProjectID: 82
           EOF
-          
-          # Принудительная авторизация перед запуском
-          /usr/local/bin/crave -c ${HOME}/.config/crave/crave.conf login
           
           # Запуск сборки без ошибочных аргументов
           /usr/local/bin/crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
