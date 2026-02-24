@@ -28,17 +28,19 @@ jobs:
 
       - name: Run Build inside Crave Cloud
         run: |
-          # Создаем файл настроек crave.yaml, чтобы напрямую сказать серверу наш Project ID (82 = PixelOS)
-          # Это поможет обойти зависший API-запрос поиска проекта
+          # Создаем конфиг проекта
           cat << 'EOF' > crave.yaml
           Version: 1
           DefaultProjectID: 82
           EOF
           
-          # Запускаем сборку (убрали обманку с git remote, так как теперь есть crave.yaml)
+          # ПРИНУДИТЕЛЬНЫЙ ВХОД: чтобы избежать таймаутов на проверке прав
+          /usr/local/bin/crave -c ${HOME}/.config/crave/crave.conf login || echo "Login failed, but trying to run anyway..."
+          
+          # ЗАПУСК: -k игнорирует проверку сертификатов, если API еще глючит
           /usr/local/bin/crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
 
-      - name: Upload ROM Artifact
+      - name: Upload Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
