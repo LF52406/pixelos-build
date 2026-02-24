@@ -2,6 +2,9 @@ name: PixelOS Mondrian Build
 
 on:
   workflow_dispatch:
+  # Можно добавить schedule если нужно
+  # schedule:
+  #   - cron: '0 0 * * 0'  # Еженедельно в воскресенье
 
 jobs:
   build:
@@ -42,17 +45,43 @@ jobs:
           token: ${{ secrets.CRAVE_TOKEN }}
           EOF
 
+      - name: Check existing clones
+        run: |
+          export PATH="$HOME/bin:$PATH"
+          echo "📋 Existing clones:"
+          crave clone list || echo "No clones yet"
+
       - name: Setup project and sync
         run: |
           export PATH="$HOME/bin:$PATH"
-          crave clone create "pixelos_qpr2_mondrian" || true
-          cd "$(crave clone dir pixelos_qpr2_mondrian)"
-
-          repo init -u https://github.com/LF52406/android_manifest.git -b sixteen-qpr2 --git-lfs
-
+          
+          # Создаём или используем существующее окружение
+          CLONE_NAME="pixelos_qpr2_mondrian"
+          
+          if crave clone list | grep -q "$CLONE_NAME"; then
+            echo "✅ Clone '$CLONE_NAME' already exists, using existing one"
+          else
+            echo "📦 Creating new clone '$CLONE_NAME'"
+            crave clone create "$CLONE_NAME"
+          fi
+          
+          # Переходим в директорию клона
+          cd "$(crave clone dir "$CLONE_NAME")"
+          echo "📍 Working directory: $(pwd)"
+          
+          # Инициализируем repo если ещё не инициализировано
+          if [ ! -d .repo ]; then
+            echo "📥 Initializing repo..."
+            repo init -u https://github.com/LF52406/android_manifest.git -b sixteen-qpr2 --git-lfs
+          else
+            echo "✅ Repo already initialized"
+          fi
+          
+          # Обновляем локальные манифесты
+          echo "📝 Updating local manifests..."
           rm -rf .repo/local_manifests
           mkdir -p .repo/local_manifests
-
+          
           cat << 'EOF' > .repo/local_manifests/mondrian.xml
           <?xml version="1.0" encoding="UTF-8"?>
           <manifest>
@@ -66,26 +95,87 @@ jobs:
               <project path="hardware/xiaomi" name="LineageOS/android_hardware_xiaomi" remote="github" revision="lineage-23.2" />
           </manifest>
           EOF
-
-          repo sync -c -j8 --force-sync --no-tags --no-clone-bundle
+          
+          echo "📄 Local manifest created:"
+          cat .repo/local_manifests/mondrian.xml
+          
+          # Синхронизация с видимым прогрессом
+          echo "🔄 Starting repo sync (this may take 20-40 minutes)..."
+          echo "⏱️  Started at: $(date)"
+          
+          # Запускаем sync с выводом прогресса
+          repo sync -c -j8 --force-sync --no-tags --no-clone-bundle --fail-fast 2>&1 | while IFS= read -r line; do
+            echo "$line"
+            # Показываем прогресс каждые 5 минут для длительных операций
+            if [[ "$line" == *"Fetching"* ]] || [[ "$line" == *"Checking out"* ]] || [[ "$line" == *"Syncing work tree"* ]]; then
+              echo "⏳ Still syncing... $(date +%H:%M:%S)"
+            fi
+          done
+          
+          # Проверяем успешность синхронизации
+          SYNC_RESULT=${PIPESTATUS[0]}
+          if [ $SYNC_RESULT -eq 0 ]; then
+            echo "✅ Sync completed successfully at $(date)"
+          else
+            echo "❌ Sync failed with code $SYNC_RESULT"
+            exit $SYNC_RESULT
+          fi
+          
+          # Показываем статистику
+          echo "📊 Disk usage:"
+          du -sh .repo/projects 2>/dev/null || echo "No projects yet"
+          echo "📁 Total projects:"
+          repo list | wc -l
 
       - name: Run build
         run: |
           export PATH="$HOME/bin:$PATH"
           cd "$(crave clone dir pixelos_qpr2_mondrian)"
+          
+          echo "🏗️  Starting build at $(date)"
+          echo "⚙️  Build configuration: pixelos_mondrian-userdebug"
+          
+          # Запускаем сборку
           crave run --clean --no-patch -- "source build/envsetup.sh && lunch pixelos_mondrian-userdebug && mka bacon -j\$(nproc --all)"
+          
+          echo "✅ Build finished at $(date)"
 
       - name: Download result
         if: always()
         run: |
           export PATH="$HOME/bin:$PATH"
           cd "$(crave clone dir pixelos_qpr2_mondrian)"
-          crave pull out/target/product/mondrian/*.zip || true
+          
+          echo "📥 Checking for build artifacts..."
+          
+          # Проверяем наличие zip файлов
+          if crave ls out/target/product/mondrian/*.zip 2>/dev/null | grep -q ".zip"; then
+            echo "✅ Found zip files, downloading..."
+            crave pull out/target/product/mondrian/*.zip ./
+          else
+            echo "⚠️ No zip files found in out/target/product/mondrian/"
+            # Показываем содержимое директории для диагностики
+            echo "📁 Contents of out/target/product/mondrian/:"
+            crave ls out/target/product/mondrian/ || echo "Directory not found"
+          fi
 
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: PixelOS-mondrian
-          path: "**/mondrian/*.zip"
+          name: PixelOS-mondrian-${{ github.run_number }}
+          path: |
+            *.zip
+            **/mondrian/*.zip
           if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Cleanup old clones (optional)
+        if: always()
+        run: |
+          export PATH="$HOME/bin:$PATH"
+          echo "🧹 Checking clone status..."
+          crave clone list
+          # Раскомментируйте если хотите удалять clone после сборки:
+          # crave clone delete pixelos_qpr2_mondrian || true
+          # echo "✅ Clone deleted"
