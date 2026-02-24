@@ -1,4 +1,4 @@
-name: PixelOS Mondrian Crave Hack
+name: PixelOS Mondrian Crave Build
 
 on:
   workflow_dispatch:
@@ -17,7 +17,6 @@ jobs:
           curl -sL -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
           chmod +x crave
           sudo mv crave /usr/local/bin/crave
-          /usr/local/bin/crave --version || true
 
       - name: Configure Crave
         run: |
@@ -29,13 +28,16 @@ jobs:
 
       - name: Run Build inside Crave Cloud
         run: |
-          git remote set-url origin https://github.com/accupara/crave-workspaces.git
+          # Официальная ссылка в качестве пропуска на сервера
+          git remote set-url origin https://github.com/PixelOS-AOSP/android_manifest.git
+          
+          # Запуск сборки
           /usr/local/bin/crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
 
-      - name: Upload Artifact
+      - name: Upload ROM Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: PixelOS-mondrian
+          name: PixelOS-mondrian-ROM
           path: ./*.zip
           if-no-files-found: ignore
