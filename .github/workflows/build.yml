@@ -2,8 +2,6 @@ name: PixelOS Mondrian Build
 
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: '0 0 * * 0'  # Еженедельно в воскресенье (раскомментируйте если нужно)
 
 jobs:
   build:
@@ -17,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y curl git python3
+          sudo apt install -y curl git python3 python3-pip
 
       - name: Install repo
         run: |
@@ -25,98 +23,107 @@ jobs:
           curl https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
           chmod +x $HOME/bin/repo
 
-      - name: Install crave
+      - name: Install crave correctly
         run: |
-          curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
-          if [ -f crave ]; then mv crave $HOME/bin/crave && chmod +x $HOME/bin/crave; fi
-          if [ -f bin/crave ]; then mv bin/crave $HOME/bin/crave && chmod +x $HOME/bin/crave; fi
+          # Создаем bin директорию
+          mkdir -p $HOME/bin
+          
+          # Скачиваем crave напрямую (более надежный способ)
+          echo "📥 Downloading crave..."
+          curl -L -o $HOME/bin/crave https://github.com/accupara/crave/releases/latest/download/crave-linux-amd64
+          
+          # Делаем исполняемым
+          chmod +x $HOME/bin/crave
+          
+          # Добавляем в PATH для текущей сессии
+          export PATH="$HOME/bin:$PATH"
+          
+          # Проверяем установку
+          echo "✅ Crave installed at: $(which crave)"
+          echo "✅ Crave version:"
+          $HOME/bin/crave version || echo "⚠️ Version check failed but continuing"
 
       - name: Add tools to PATH
-        run: echo "$HOME/bin" >> $GITHUB_PATH
+        run: |
+          echo "$HOME/bin" >> $GITHUB_PATH
+          echo "✅ PATH updated"
+
+      - name: Verify crave installation
+        run: |
+          export PATH="$HOME/bin:$PATH"
+          echo "🔍 PATH: $PATH"
+          echo "🔍 Which crave: $(which crave || echo 'Not found')"
+          echo "🔍 Crave version:"
+          crave version || echo "❌ Crave still not working"
 
       - name: Configure Crave
         run: |
           export PATH="$HOME/bin:$PATH"
           mkdir -p $HOME/.crave
+          
+          # Создаем конфиг
           cat << EOF > $HOME/.crave/crave.conf
           [crave]
-          username: ${{ secrets.CRAVE_USERNAME }}
-          token: ${{ secrets.CRAVE_TOKEN }}
+          username = "${{ secrets.CRAVE_USERNAME }}"
+          token = "${{ secrets.CRAVE_TOKEN }}"
           EOF
           
-          # Проверяем конфигурацию
-          echo "🔍 Crave config:"
+          echo "✅ Crave config created at $HOME/.crave/crave.conf"
+          
+          # Проверяем конфиг (без показа токена)
+          echo "🔍 Config content:"
           cat $HOME/.crave/crave.conf | grep -v token
 
-      - name: Debug Crave Setup
+      - name: Test crave authentication
         run: |
           export PATH="$HOME/bin:$PATH"
-          echo "🔍 Checking crave installation:"
-          which crave || echo "❌ crave not found in PATH"
-          echo "🔍 PATH: $PATH"
-          echo "🔍 Crave version:"
-          crave version || echo "❌ Cannot get crave version"
-          echo "🔍 Crave auth status:"
-          crave auth status || echo "❌ Auth failed - check username and token"
+          echo "🔍 Testing crave authentication..."
+          
+          # Пробуем простую команду для проверки
+          if crave clone list > /dev/null 2>&1; then
+            echo "✅ Crave authentication successful!"
+          else
+            echo "❌ Crave authentication failed"
+            echo "Please check:"
+            echo "1. CRAVE_USERNAME secret is set correctly"
+            echo "2. CRAVE_TOKEN secret is set correctly"
+            echo "3. Your Crave account is active"
+            
+            # Показываем ошибку подробнее
+            crave clone list 2>&1 || true
+            exit 1
+          fi
 
       - name: Setup project and sync
         run: |
           export PATH="$HOME/bin:$PATH"
           
-          # Создаем уникальное имя клона с датой и временем
+          # Уникальное имя клона
           CLONE_NAME="pixelos_mondrian_$(date +%Y%m%d_%H%M%S)"
           echo "📦 Using clone name: $CLONE_NAME"
           
-          # Проверяем доступные клоны
-          echo "📋 Existing clones before creation:"
-          crave clone list || echo "No clones or failed to list"
-          
-          # Пытаемся создать новый клон
+          # Создаем новый клон
           echo "🔄 Creating new clone..."
           if crave clone create "$CLONE_NAME"; then
             echo "✅ Clone created successfully"
           else
-            echo "❌ Failed to create clone. Checking alternatives..."
-            
-            # Пробуем создать с другим именем (более простым)
-            SIMPLE_NAME="pixelos_build"
-            echo "🔄 Trying simple name: $SIMPLE_NAME"
-            
-            # Удаляем если существует
-            crave clone delete "$SIMPLE_NAME" || true
-            
-            if crave clone create "$SIMPLE_NAME"; then
-              echo "✅ Clone created with simple name"
-              CLONE_NAME="$SIMPLE_NAME"
-            else
-              echo "❌ Cannot create clone. Checking disk space..."
-              crave run --no-patch -- "df -h" || echo "Cannot check disk space"
-              exit 1
-            fi
+            echo "❌ Failed to create clone"
+            echo "Checking available commands:"
+            crave help || true
+            exit 1
           fi
           
           # Получаем директорию клона
-          CLONE_DIR=$(crave clone dir "$CLONE_NAME" 2>&1) || {
-            echo "❌ Cannot get clone directory"
-            exit 1
-          }
-          
+          CLONE_DIR=$(crave clone dir "$CLONE_NAME")
           cd "$CLONE_DIR"
           echo "📍 Working directory: $(pwd)"
-          echo "📁 Directory contents:"
-          ls -la
           
-          # Инициализируем repo если ещё не инициализировано
-          if [ ! -d .repo ]; then
-            echo "📥 Initializing repo..."
-            repo init -u https://github.com/LF52406/android_manifest.git -b sixteen-qpr2 --git-lfs
-          else
-            echo "✅ Repo already initialized"
-          fi
+          # Инициализируем repo
+          echo "📥 Initializing repo..."
+          repo init -u https://github.com/LF52406/android_manifest.git -b sixteen-qpr2 --git-lfs
           
-          # Обновляем локальные манифесты
-          echo "📝 Updating local manifests..."
-          rm -rf .repo/local_manifests
+          # Создаем локальные манифесты
+          echo "📝 Creating local manifests..."
           mkdir -p .repo/local_manifests
           
           cat << 'EOF' > .repo/local_manifests/mondrian.xml
@@ -133,110 +140,41 @@ jobs:
           </manifest>
           EOF
           
-          echo "📄 Local manifest created"
+          echo "✅ Local manifest created"
           
-          # Синхронизация с видимым прогрессом
-          echo "🔄 Starting repo sync (this may take 20-40 minutes)..."
-          echo "⏱️  Started at: $(date)"
-          
-          # Запускаем sync с выводом прогресса
-          repo sync -c -j8 --force-sync --no-tags --no-clone-bundle --fail-fast 2>&1 | while IFS= read -r line; do
-            echo "$line"
-            # Показываем прогресс для длительных операций
-            if [[ "$line" == *"Fetching"* ]] || [[ "$line" == *"Checking out"* ]] || [[ "$line" == *"Syncing work tree"* ]]; then
-              echo "⏳ Still syncing... $(date +%H:%M:%S)"
-            fi
-          done
-          
-          # Проверяем успешность синхронизации
-          SYNC_RESULT=${PIPESTATUS[0]}
-          if [ $SYNC_RESULT -eq 0 ]; then
-            echo "✅ Sync completed successfully at $(date)"
-          else
-            echo "❌ Sync failed with code $SYNC_RESULT"
-            exit $SYNC_RESULT
-          fi
-          
-          # Показываем статистику
-          echo "📊 Disk usage:"
-          du -sh .repo/projects 2>/dev/null || echo "No projects yet"
-          echo "📁 Total projects:"
-          repo list | wc -l
+          # Синхронизация
+          echo "🔄 Starting repo sync..."
+          repo sync -c -j8 --force-sync --no-tags --no-clone-bundle
 
       - name: Run build
         run: |
           export PATH="$HOME/bin:$PATH"
-          # Находим последний созданный клон
-          CLONE_NAME=$(crave clone list | grep "pixelos" | tail -1 | awk '{print $1}')
-          if [ -z "$CLONE_NAME" ]; then
-            echo "❌ No pixelos clone found"
-            exit 1
-          fi
           
+          # Находим последний клон
+          CLONE_NAME=$(crave clone list | grep "pixelos" | tail -1 | awk '{print $1}')
           cd "$(crave clone dir "$CLONE_NAME")"
           
-          echo "🏗️  Starting build at $(date)"
-          echo "⚙️  Build configuration: pixelos_mondrian-userdebug"
-          
-          # Запускаем сборку
+          echo "🏗️ Starting build..."
           crave run --clean --no-patch -- "source build/envsetup.sh && lunch pixelos_mondrian-userdebug && mka bacon -j\$(nproc --all)"
-          
-          echo "✅ Build finished at $(date)"
 
       - name: Download result
         if: always()
         run: |
           export PATH="$HOME/bin:$PATH"
-          # Находим последний созданный клон
-          CLONE_NAME=$(crave clone list | grep "pixelos" | tail -1 | awk '{print $1}')
-          if [ -z "$CLONE_NAME" ]; then
-            echo "❌ No pixelos clone found"
-            exit 1
-          fi
           
+          CLONE_NAME=$(crave clone list | grep "pixelos" | tail -1 | awk '{print $1}')
           cd "$(crave clone dir "$CLONE_NAME")"
           
-          echo "📥 Checking for build artifacts..."
-          
-          # Создаем директорию для загрузки
+          echo "📥 Downloading artifacts..."
           mkdir -p $HOME/artifacts
           cd $HOME/artifacts
           
-          # Проверяем наличие zip файлов
-          if crave ls "$CLONE_NAME:out/target/product/mondrian/*.zip" 2>/dev/null | grep -q ".zip"; then
-            echo "✅ Found zip files, downloading..."
-            crave pull --clone "$CLONE_NAME" out/target/product/mondrian/*.zip ./
-          else
-            echo "⚠️ No zip files found in out/target/product/mondrian/"
-            # Показываем содержимое директории для диагностики
-            echo "📁 Contents of out/target/product/mondrian/:"
-            crave ls "$CLONE_NAME:out/target/product/mondrian/" || echo "Directory not found"
-          fi
+          crave pull out/target/product/mondrian/*.zip ./ || echo "No zip files found"
 
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: PixelOS-mondrian-${{ github.run_number }}
-          path: |
-            $HOME/artifacts/*.zip
+          path: $HOME/artifacts/*.zip
           if-no-files-found: ignore
-          retention-days: 30
-
-      - name: Cleanup
-        if: always()
-        run: |
-          export PATH="$HOME/bin:$PATH"
-          echo "🧹 Cleaning up old clones..."
-          
-          # Удаляем клоны старше 3 дней
-          crave clone list | grep "pixelos" | while read -r line; do
-            CLONE_NAME=$(echo "$line" | awk '{print $1}')
-            CLONE_DATE=$(echo "$line" | awk '{print $2}')
-            echo "Found clone: $CLONE_NAME from $CLONE_DATE"
-            
-            # Здесь можно добавить логику удаления старых клонов
-            # crave clone delete "$CLONE_NAME" || true
-          done
-          
-          echo "✅ Cleanup completed"
