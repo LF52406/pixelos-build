@@ -20,32 +20,95 @@ jobs:
       - name: Install repo
         run: |
           mkdir -p $HOME/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
+          curl -s -o $HOME/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
           chmod +x $HOME/bin/repo
           echo "$HOME/bin" >> $GITHUB_PATH
 
-      - name: Install crave binary
+      - name: Install crave binary with retries
         run: |
           mkdir -p $HOME/bin
           rm -f $HOME/bin/crave
           
-          echo "📥 Downloading crave binary..."
-          wget -q --show-progress --timeout=30 -O $HOME/bin/crave https://github.com/accupara/crave/releases/download/v0.4.0/crave-linux-amd64
+          echo "📥 Downloading crave binary with retries..."
           
-          # Явно устанавливаем права на выполнение
-          chmod 755 $HOME/bin/crave
+          # Пробуем несколько раз с разными методами
+          for i in {1..3}; do
+            echo "Attempt $i..."
+            
+            # Метод 1: wget с таймаутом и retry
+            if wget --timeout=30 --tries=3 --retry-connrefused -q --show-progress -O $HOME/bin/crave https://github.com/accupara/crave/releases/download/v0.4.0/crave-linux-amd64; then
+              echo "✅ Download successful with wget"
+              break
+            fi
+            
+            # Метод 2: curl если wget не сработал
+            if curl -L --connect-timeout 30 --retry 3 -o $HOME/bin/crave https://github.com/accupara/crave/releases/download/v0.4.0/crave-linux-amd64; then
+              echo "✅ Download successful with curl"
+              break
+            fi
+            
+            if [ $i -eq 3 ]; then
+              echo "❌ All download attempts failed"
+              exit 1
+            fi
+            
+            sleep 5
+          done
           
-          # Проверяем права
-          echo "✅ File permissions:"
-          ls -la $HOME/bin/crave
+          # Проверяем размер файла
+          if [ -f $HOME/bin/crave ]; then
+            FILE_SIZE=$(wc -c < $HOME/bin/crave)
+            echo "📊 File size: $FILE_SIZE bytes"
+            
+            if [ $FILE_SIZE -lt 1000000 ]; then
+              echo "❌ File too small ($FILE_SIZE bytes), download failed"
+              rm -f $HOME/bin/crave
+              exit 1
+            fi
+            
+            # Устанавливаем права
+            chmod 755 $HOME/bin/crave
+            
+            # Проверяем что это ELF бинарник
+            if file $HOME/bin/crave | grep -q "ELF"; then
+              echo "✅ Valid ELF binary detected"
+            else
+              echo "❌ Not a valid ELF binary"
+              rm -f $HOME/bin/crave
+              exit 1
+            fi
+          else
+            echo "❌ File not found after download"
+            exit 1
+          fi
           
           # Добавляем в PATH
           export PATH="$HOME/bin:$PATH"
           echo "$HOME/bin" >> $GITHUB_PATH
           
-          # Проверяем что работает
+          # Проверяем работу
           echo "✅ Testing crave:"
-          $HOME/bin/crave version || echo "⚠️ Version check failed"
+          $HOME/bin/crave version || echo "⚠️ Version check failed but continuing"
+
+      - name: Verify crave installation
+        run: |
+          if [ ! -f $HOME/bin/crave ]; then
+            echo "❌ Crave binary missing"
+            exit 1
+          fi
+          
+          if [ ! -x $HOME/bin/crave ]; then
+            echo "❌ Crave binary not executable, fixing..."
+            chmod 755 $HOME/bin/crave
+          fi
+          
+          echo "✅ Crave binary OK:"
+          ls -la $HOME/bin/crave
+          file $HOME/bin/crave
+          
+          # Добавляем в PATH
+          export PATH="$HOME/bin:$PATH"
+          echo "$HOME/bin" >> $GITHUB_PATH
 
       - name: Configure Crave
         env:
@@ -54,18 +117,12 @@ jobs:
         run: |
           export PATH="$HOME/bin:$PATH"
           
-          # Явно указываем полный путь к crave
-          CRAVE_BIN="$HOME/bin/crave"
-          
-          # Проверяем существование и права
-          if [ ! -f "$CRAVE_BIN" ]; then
-            echo "❌ Crave binary not found at $CRAVE_BIN"
+          # Проверяем что crave доступен
+          if ! command -v crave &> /dev/null; then
+            echo "❌ crave command not found in PATH"
+            echo "PATH: $PATH"
+            ls -la $HOME/bin/ || true
             exit 1
-          fi
-          
-          if [ ! -x "$CRAVE_BIN" ]; then
-            echo "❌ Crave binary is not executable"
-            chmod 755 "$CRAVE_BIN"
           fi
           
           mkdir -p $HOME/.crave
@@ -94,39 +151,49 @@ jobs:
           chmod 600 $HOME/.crave/crave.conf
           echo "✅ Crave config created"
           
-          # Тестируем с полным путем
+          # Тестируем аутентификацию
           echo "🔍 Testing authentication..."
-          if $CRAVE_BIN clone list > /dev/null 2>&1; then
+          if crave clone list > /dev/null 2>&1; then
             echo "✅ Authentication successful!"
-            $CRAVE_BIN clone list
+            crave clone list
           else
             echo "❌ Authentication failed"
-            echo "Debug: Trying with full path..."
-            $CRAVE_BIN --config $HOME/.crave/crave.conf clone list || true
+            echo "Debug: Trying with explicit config..."
+            crave --config $HOME/.crave/crave.conf clone list || true
             exit 1
           fi
 
       - name: Setup project and sync
         run: |
           export PATH="$HOME/bin:$PATH"
-          CRAVE_BIN="$HOME/bin/crave"
           
-          # Уникальное имя клона
-          CLONE_NAME="pixelos_mondrian_$(date +%Y%m%d_%H%M%S)"
-          echo "📦 Creating new clone: $CLONE_NAME"
-          
-          # Создаем новый клон
-          if $CRAVE_BIN clone create "$CLONE_NAME"; then
-            echo "✅ Clone created successfully"
-          else
-            echo "❌ Failed to create clone"
-            echo "Existing clones:"
-            $CRAVE_BIN clone list || true
+          # Проверяем что crave работает
+          if ! command -v crave &> /dev/null; then
+            echo "❌ crave command not found"
             exit 1
           fi
           
-          # Получаем директорию клона
-          cd "$($CRAVE_BIN clone dir "$CLONE_NAME")"
+          # Удаляем старые клоны если есть
+          echo "🧹 Cleaning old clones..."
+          crave clone list | grep "pixelos" | while read -r line; do
+            OLD_CLONE=$(echo "$line" | awk '{print $1}')
+            echo "Removing old clone: $OLD_CLONE"
+            crave clone delete "$OLD_CLONE" || true
+          done
+          
+          # Создаем новый клон
+          CLONE_NAME="pixelos_mondrian_$(date +%Y%m%d_%H%M%S)"
+          echo "📦 Creating new clone: $CLONE_NAME"
+          
+          if crave clone create "$CLONE_NAME"; then
+            echo "✅ Clone created successfully"
+          else
+            echo "❌ Failed to create clone"
+            exit 1
+          fi
+          
+          # Переходим в директорию клона
+          cd "$(crave clone dir "$CLONE_NAME")"
           echo "📍 Working directory: $(pwd)"
           
           # Инициализируем repo
@@ -161,41 +228,30 @@ jobs:
       - name: Run build
         run: |
           export PATH="$HOME/bin:$PATH"
-          CRAVE_BIN="$HOME/bin/crave"
           
-          # Находим последний клон
-          CLONE_NAME=$($CRAVE_BIN clone list | grep "pixelos" | tail -1 | awk '{print $1}')
+          CLONE_NAME=$(crave clone list | grep "pixelos" | tail -1 | awk '{print $1}')
           if [ -z "$CLONE_NAME" ]; then
             echo "❌ No pixelos clone found"
-            $CRAVE_BIN clone list || true
+            crave clone list || true
             exit 1
           fi
           
-          cd "$($CRAVE_BIN clone dir "$CLONE_NAME")"
-          echo "📍 Build directory: $(pwd)"
-          
+          cd "$(crave clone dir "$CLONE_NAME")"
           echo "🏗️ Starting build..."
-          $CRAVE_BIN run --clean --no-patch -- "source build/envsetup.sh && lunch pixelos_mondrian-userdebug && mka bacon -j\$(nproc --all)"
+          crave run --clean --no-patch -- "source build/envsetup.sh && lunch pixelos_mondrian-userdebug && mka bacon -j\$(nproc --all)"
 
       - name: Download result
         if: always()
         run: |
           export PATH="$HOME/bin:$PATH"
-          CRAVE_BIN="$HOME/bin/crave"
           
-          CLONE_NAME=$($CRAVE_BIN clone list | grep "pixelos" | tail -1 | awk '{print $1}')
-          if [ -z "$CLONE_NAME" ]; then
-            echo "❌ No pixelos clone found"
-            exit 1
+          CLONE_NAME=$(crave clone list | grep "pixelos" | tail -1 | awk '{print $1}')
+          if [ -n "$CLONE_NAME" ]; then
+            cd "$(crave clone dir "$CLONE_NAME")"
+            mkdir -p $HOME/artifacts
+            cd $HOME/artifacts
+            crave pull out/target/product/mondrian/*.zip . || echo "No zip files found"
           fi
-          
-          cd "$($CRAVE_BIN clone dir "$CLONE_NAME")"
-          
-          echo "📥 Downloading artifacts..."
-          mkdir -p $HOME/artifacts
-          cd $HOME/artifacts
-          
-          $CRAVE_BIN pull out/target/product/mondrian/*.zip . || echo "No zip files found"
 
       - name: Upload artifact
         if: always()
