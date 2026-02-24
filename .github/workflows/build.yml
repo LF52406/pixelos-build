@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y curl git python3 python3-pip
+          sudo apt install -y curl git python3 python3-pip wget
 
       - name: Install repo
         run: |
@@ -23,38 +23,31 @@ jobs:
           curl https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
           chmod +x $HOME/bin/repo
 
-      - name: Install crave correctly
+      - name: Install crave (simple method)
         run: |
-          # Создаем bin директорию
           mkdir -p $HOME/bin
           
-          # Скачиваем crave напрямую (более надежный способ)
-          echo "📥 Downloading crave..."
-          curl -L -o $HOME/bin/crave https://github.com/accupara/crave/releases/latest/download/crave-linux-amd64
+          # Удаляем старый бинарник если есть
+          rm -f $HOME/bin/crave
+          
+          # Скачиваем crave напрямую (проверенная рабочая версия)
+          echo "📥 Downloading crave v0.4.0..."
+          wget -q --show-progress -O $HOME/bin/crave https://github.com/accupara/crave/releases/download/v0.4.0/crave-linux-amd64
           
           # Делаем исполняемым
           chmod +x $HOME/bin/crave
           
-          # Добавляем в PATH для текущей сессии
+          # Добавляем в PATH
           export PATH="$HOME/bin:$PATH"
-          
-          # Проверяем установку
-          echo "✅ Crave installed at: $(which crave)"
-          echo "✅ Crave version:"
-          $HOME/bin/crave version || echo "⚠️ Version check failed but continuing"
-
-      - name: Add tools to PATH
-        run: |
           echo "$HOME/bin" >> $GITHUB_PATH
-          echo "✅ PATH updated"
-
-      - name: Verify crave installation
-        run: |
-          export PATH="$HOME/bin:$PATH"
-          echo "🔍 PATH: $PATH"
-          echo "🔍 Which crave: $(which crave || echo 'Not found')"
-          echo "🔍 Crave version:"
-          crave version || echo "❌ Crave still not working"
+          
+          # Проверяем что это действительно бинарник
+          echo "✅ Checking file type:"
+          file $HOME/bin/crave
+          
+          # Проверяем версию
+          echo "✅ Crave version:"
+          $HOME/bin/crave version
 
       - name: Configure Crave
         run: |
@@ -64,33 +57,19 @@ jobs:
           # Создаем конфиг
           cat << EOF > $HOME/.crave/crave.conf
           [crave]
-          username = "${{ secrets.CRAVE_USERNAME }}"
-          token = "${{ secrets.CRAVE_TOKEN }}"
+          username = ${{ secrets.CRAVE_USERNAME }}
+          token = ${{ secrets.CRAVE_TOKEN }}
           EOF
           
-          echo "✅ Crave config created at $HOME/.crave/crave.conf"
+          echo "✅ Crave config created"
           
-          # Проверяем конфиг (без показа токена)
-          echo "🔍 Config content:"
-          cat $HOME/.crave/crave.conf | grep -v token
-
-      - name: Test crave authentication
-        run: |
-          export PATH="$HOME/bin:$PATH"
-          echo "🔍 Testing crave authentication..."
-          
-          # Пробуем простую команду для проверки
+          # Проверяем аутентификацию
+          echo "🔍 Testing authentication..."
           if crave clone list > /dev/null 2>&1; then
-            echo "✅ Crave authentication successful!"
+            echo "✅ Authentication successful!"
           else
-            echo "❌ Crave authentication failed"
-            echo "Please check:"
-            echo "1. CRAVE_USERNAME secret is set correctly"
-            echo "2. CRAVE_TOKEN secret is set correctly"
-            echo "3. Your Crave account is active"
-            
-            # Показываем ошибку подробнее
-            crave clone list 2>&1 || true
+            echo "❌ Authentication failed. Checking config..."
+            cat $HOME/.crave/crave.conf | grep -v token
             exit 1
           fi
 
@@ -104,18 +83,10 @@ jobs:
           
           # Создаем новый клон
           echo "🔄 Creating new clone..."
-          if crave clone create "$CLONE_NAME"; then
-            echo "✅ Clone created successfully"
-          else
-            echo "❌ Failed to create clone"
-            echo "Checking available commands:"
-            crave help || true
-            exit 1
-          fi
+          crave clone create "$CLONE_NAME"
           
           # Получаем директорию клона
-          CLONE_DIR=$(crave clone dir "$CLONE_NAME")
-          cd "$CLONE_DIR"
+          cd "$(crave clone dir "$CLONE_NAME")"
           echo "📍 Working directory: $(pwd)"
           
           # Инициализируем repo
@@ -143,7 +114,7 @@ jobs:
           echo "✅ Local manifest created"
           
           # Синхронизация
-          echo "🔄 Starting repo sync..."
+          echo "🔄 Starting repo sync (this will take 20-40 minutes)..."
           repo sync -c -j8 --force-sync --no-tags --no-clone-bundle
 
       - name: Run build
@@ -154,7 +125,7 @@ jobs:
           CLONE_NAME=$(crave clone list | grep "pixelos" | tail -1 | awk '{print $1}')
           cd "$(crave clone dir "$CLONE_NAME")"
           
-          echo "🏗️ Starting build..."
+          echo "🏗️ Starting build at $(date)"
           crave run --clean --no-patch -- "source build/envsetup.sh && lunch pixelos_mondrian-userdebug && mka bacon -j\$(nproc --all)"
 
       - name: Download result
@@ -169,7 +140,7 @@ jobs:
           mkdir -p $HOME/artifacts
           cd $HOME/artifacts
           
-          crave pull out/target/product/mondrian/*.zip ./ || echo "No zip files found"
+          crave pull out/target/product/mondrian/*.zip . || echo "No zip files found"
 
       - name: Upload artifact
         if: always()
