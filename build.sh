@@ -1,17 +1,17 @@
 #!/bin/bash
 set -e
 
-# Запоминаем главную папку, куда Crave вернет файлы после сборки
+# Путь для сохранения результата
 GH_DIR=$PWD
 
-# Уходим в "слепую зону" сервера Crave (чтобы не забить диск GitHub при синхронизации)
+# Переходим в рабочую папку на сервере Crave
 mkdir -p /tmp/build
 cd /tmp/build
 
-echo "=== Инициализация исходников ==="
+echo "=== Инициализация исходников PixelOS (15.0) ==="
 repo init -u https://github.com/LF52406/android_manifest.git -b sixteen-qpr2 --git-lfs
 
-echo "=== Создание локального манифеста mondrian ==="
+echo "=== Добавление манифестов для Mondrian (Poco F5 Pro) ==="
 mkdir -p .repo/local_manifests
 cat << 'EOF' > .repo/local_manifests/mondrian.xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,16 +27,13 @@ cat << 'EOF' > .repo/local_manifests/mondrian.xml
 </manifest>
 EOF
 
-echo "=== Скачивание исходников (repo sync) ==="
+echo "=== Синхронизация репозиториев (это может занять время) ==="
 repo sync -c -j$(nproc --all) --force-sync --no-tags --no-clone-bundle
 
-echo "=== Запуск компиляции ==="
+echo "=== Старт компиляции ==="
 source build/envsetup.sh
 lunch pixelos_mondrian-userdebug
 mka bacon -j$(nproc --all)
 
-echo "=== Подготовка прошивки к выдаче ==="
-# Копируем только готовый ZIP в папку, которую Crave отправит тебе на скачивание
+echo "=== Сборка завершена, копируем файл ==="
 cp out/target/product/mondrian/*.zip $GH_DIR/
-echo "Прошивка успешно скопирована! Размер файла:"
-ls -lh $GH_DIR/*.zip
