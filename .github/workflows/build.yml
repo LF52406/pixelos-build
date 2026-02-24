@@ -28,14 +28,17 @@ jobs:
 
       - name: Run Build inside Crave Cloud
         run: |
-          # Принудительно создаем конфиг проекта для PixelOS
+          # Создаем обязательный файл проекта
           cat << 'EOF' > crave.yaml
           Version: 1
           DefaultProjectID: 82
           EOF
           
-          # Запуск через --devspace, чтобы пробить таймауты и войти без очереди
-          /usr/local/bin/crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch --devspace -- bash build.sh
+          # Принудительная авторизация перед запуском
+          /usr/local/bin/crave -c ${HOME}/.config/crave/crave.conf login
+          
+          # Запуск сборки без ошибочных аргументов
+          /usr/local/bin/crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
 
       - name: Upload Artifact
         if: always()
