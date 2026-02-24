@@ -1,83 +1,79 @@
-name: PixelOS Mondrian Local Build
+name: PixelOS QPR2 Mondrian Crave
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Swap
-        run: |
-          sudo swapoff -a || true
-          sudo rm -f /swapfile || true
-          sudo fallocate -l 20G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
-
-      - name: Free Disk Space
-        run: |
-          sudo rm -rf /usr/share/dotnet || true
-          sudo rm -rf /opt/ghc || true
-          sudo rm -rf /usr/local/share/boost || true
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
-          sudo docker image prune -a -f || true
-          sudo apt clean || true
-          df -h
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib \
-          gcc-multilib git git-lfs gnupg gperf imagemagick lib32ncurses5-dev \
-          lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev \
-          libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
-          schedtool squashfs-tools xsltproc zip zlib1g-dev python3
+          sudo apt install -y curl git python3
 
-      - name: Install repo
+      - name: Install Crave CLI
         run: |
-          mkdir -p ~/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod +x ~/bin/repo
-          echo "$HOME/bin" >> $GITHUB_PATH
+          curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
 
-      - name: Set Build Environment
+      - name: Configure Crave
         run: |
-          echo "USE_CCACHE=1" >> $GITHUB_ENV
-          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=5G" >> $GITHUB_ENV
-          echo "NINJA_ARGS=-j$(nproc --all)" >> $GITHUB_ENV
-          echo "SOONG_JAVA_HEAP_SIZE=4096" >> $GITHUB_ENV
-          echo "WITH_DEXPREOPT_DEBUG_INFO=false" >> $GITHUB_ENV
-          ccache -M 5G || true
+          mkdir -p \~/.crave
+          cat << EOF > \~/.crave/crave.conf
+          [crave]
+          username: ${{ secrets.CRAVE_USERNAME }}
+          token: ${{ secrets.CRAVE_TOKEN }}
+          EOF
 
-      - name: Build
+      - name: Setup project and sync
         run: |
-          chmod +x build.sh
-          ./build.sh
+          crave clone create "pixelos_qpr2_mondrian" || true
+          cd "$(crave clone dir pixelos_qpr2_mondrian)"
 
-      - name: Upload ROM
+          repo init -u https://github.com/LF52406/android_manifest.git -b sixteen-qpr2 --git-lfs
+
+          rm -rf .repo/local_manifests
+          mkdir -p .repo/local_manifests
+
+          cat << 'EOF' > .repo/local_manifests/mondrian.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+              <project path="device/xiaomi/mondrian" name="LF52406/android_device_xiaomi_mondrian" remote="github" revision="lineage-23.2" />
+              <project path="device/xiaomi/sm8450-common" name="LF52406/android_device_xiaomi_sm8450-common" remote="github" revision="lineage-23.2" />
+
+              <project path="vendor/xiaomi/mondrian" name="LF52406/proprietary_vendor_xiaomi_mondrian" remote="github" revision="lineage-23.2" />
+              <project path="vendor/xiaomi/sm8450-common" name="LF52406/proprietary_vendor_xiaomi_sm8450-common" remote="github" revision="lineage-23.2" />
+
+              <project path="kernel/xiaomi/sm8450" name="LF52406/android_kernel_xiaomi_sm8450" remote="github" revision="lineage-23.2" />
+              <project path="kernel/xiaomi/sm8450-modules" name="LineageOS/android_kernel_xiaomi_sm8450-modules" remote="github" revision="lineage-23.2" />
+              <project path="kernel/xiaomi/sm8450-devicetrees" name="LineageOS/android_kernel_xiaomi_sm8450-devicetrees" remote="github" revision="lineage-23.2" />
+
+              <project path="hardware/xiaomi" name="LineageOS/android_hardware_xiaomi" remote="github" revision="lineage-23.2" />
+          </manifest>
+          EOF
+
+          repo sync -c -j8 --force-sync --no-tags --no-clone-bundle
+
+      - name: Build on Crave
+        run: |
+          cd "$(crave clone dir pixelos_qpr2_mondrian)"
+          crave run --clean --no-patch -- "source build/envsetup.sh && lunch pixelos_mondrian-userdebug && mka bacon -j\$(nproc --all)"
+
+      - name: Pull artifact
+        if: always()
+        run: |
+          cd "$(crave clone dir pixelos_qpr2_mondrian)"
+          crave pull out/target/product/mondrian/*.zip || true
+
+      - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: PixelOS-mondrian
-          path: out/target/product/mondrian/*.zip
+          path: "**/mondrian/*.zip"
           if-no-files-found: ignore
-
-      - name: Cleanup
-        if: always()
-        run: |
-          sudo swapoff /swapfile || true
-          sudo rm -f /swapfile || true
-          rm -rf out || true
-          rm -rf .repo || true
-          rm -rf $HOME/.ccache || true
-          sudo apt clean || true
-          sudo rm -rf /var/lib/apt/lists/* || true
-          df -h
