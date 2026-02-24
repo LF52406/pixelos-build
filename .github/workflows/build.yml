@@ -23,9 +23,17 @@ jobs:
           curl https://storage.googleapis.com/git-repo-downloads/repo > \~/bin/repo
           chmod +x \~/bin/repo
           curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
+          CRAVE_PATH=$(find \~ -name crave -type f -executable 2>/dev/null | head -1 || echo "")
+          if [ -n "$CRAVE_PATH" ]; then
+            CRAVE_DIR=$(dirname "$CRAVE_PATH")
+            echo "$CRAVE_DIR" >> $GITHUB_PATH
+            echo "Crave found at $CRAVE_PATH, added dir $CRAVE_DIR to PATH"
+          else
+            echo "Crave binary not found after installation"
+          fi
           echo "$HOME/bin" >> $GITHUB_PATH
           repo --version || echo "repo not found"
-          crave version || echo "tool not found"
+          crave version || echo "crave not found after path fix"
 
       - name: Configure tool
         run: |
