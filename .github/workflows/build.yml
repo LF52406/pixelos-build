@@ -28,8 +28,11 @@ jobs:
           if [ -f crave ]; then mv crave \~/bin/crave; chmod +x \~/bin/crave; fi
           if [ -f bin/crave ]; then mv bin/crave \~/bin/crave; chmod +x \~/bin/crave; fi
 
+          ls -l \~/bin  # покажет, есть ли crave и repo в \~/bin
+
       - name: Configure tool
         run: |
+          export PATH="$HOME/bin:$PATH"
           mkdir -p \~/.crave
           cat << EOF > \~/.crave/crave.conf
           [crave]
