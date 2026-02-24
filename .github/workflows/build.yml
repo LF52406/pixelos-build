@@ -28,10 +28,14 @@ jobs:
 
       - name: Run Build inside Crave Cloud
         run: |
-          # Официальная ссылка в качестве пропуска на сервера
-          git remote set-url origin https://github.com/PixelOS-AOSP/android_manifest.git
+          # Создаем файл настроек crave.yaml, чтобы напрямую сказать серверу наш Project ID (82 = PixelOS)
+          # Это поможет обойти зависший API-запрос поиска проекта
+          cat << 'EOF' > crave.yaml
+          Version: 1
+          DefaultProjectID: 82
+          EOF
           
-          # Запуск сборки
+          # Запускаем сборку (убрали обманку с git remote, так как теперь есть crave.yaml)
           /usr/local/bin/crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
 
       - name: Upload ROM Artifact
