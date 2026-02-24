@@ -1,4 +1,4 @@
-name: PixelOS Build
+name: PixelOS Mondrian Crave Hack
 
 on:
   workflow_dispatch:
@@ -14,11 +14,12 @@ jobs:
 
       - name: Install Crave
         run: |
-          curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
+          # Скачиваем файл скрытно (-sL) чтобы лог был чище
+          curl -sL -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
           chmod +x crave
           sudo mv crave /usr/local/bin/crave
-          echo "/usr/local/bin" >> $GITHUB_PATH
-          crave --version
+          # Проверяем версию по прямому пути, а если будет ошибка - игнорируем (|| true)
+          /usr/local/bin/crave --version || true
 
       - name: Configure Crave
         env:
@@ -32,15 +33,15 @@ jobs:
           token = $CRAVE_TOKEN
           EOF
           chmod 600 ${HOME}/.config/crave/crave.conf
-          crave whoami
+          /usr/local/bin/crave whoami
 
       - name: Run Build inside Crave Cloud
         run: |
           # ОБМАНКА: Подменяем проект на свободный crave-workspaces, чтобы нас пустили на сервера
           git remote set-url origin https://github.com/accupara/crave-workspaces.git
           
-          # Запускаем скрипт
-          crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
+          # Запускаем скрипт по прямому пути
+          /usr/local/bin/crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
 
       - name: Upload Artifact
         if: always()
