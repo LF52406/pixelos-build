@@ -25,13 +25,8 @@ jobs:
 
           curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
 
-          echo "Listing files after installation:"
-          ls -l
-
-          if [ -f crave ]; then mv crave \~/bin/crave; chmod +x \~/bin/crave; echo "Moved crave from . to \~/bin"; fi
-          if [ -f bin/crave ]; then mv bin/crave \~/bin/crave; chmod +x \~/bin/crave; echo "Moved crave from bin to \~/bin"; fi
-
-          echo "$HOME/bin" >> $GITHUB_PATH
+          if [ -f crave ]; then mv crave \~/bin/crave; chmod +x \~/bin/crave; fi
+          if [ -f bin/crave ]; then mv bin/crave \~/bin/crave; chmod +x \~/bin/crave; fi
 
       - name: Configure tool
         run: |
