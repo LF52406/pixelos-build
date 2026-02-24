@@ -1,4 +1,4 @@
-name: PixelOS Mondrian
+name: PixelOS Mondrian Crave Hack
 
 on:
   workflow_dispatch:
@@ -26,7 +26,6 @@ jobs:
           ${{ secrets.CRAVE_CONF }}
           EOF
           chmod 600 ${HOME}/.config/crave/crave.conf
-          /usr/local/bin/crave -c ${HOME}/.config/crave/crave.conf whoami || exit 1
 
       - name: Run Build inside Crave Cloud
         run: |
