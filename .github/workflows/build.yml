@@ -6,45 +6,28 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Install Crave
         run: |
-          curl -sL -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
-          chmod +x crave
+          curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
           sudo mv crave /usr/local/bin/crave
 
       - name: Configure Crave
         run: |
           mkdir -p ${HOME}/.config/crave
-          cat << 'EOF' > ${HOME}/.config/crave/crave.conf
-          ${{ secrets.CRAVE_CONF }}
-          EOF
-          chmod 600 ${HOME}/.config/crave/crave.conf
+          echo "${{ secrets.CRAVE_CONF }}" > ${HOME}/.config/crave/crave.conf
 
-      - name: Run Build inside Crave Cloud
+      - name: Run Crave
         run: |
-          # 1. Создаем конфиг проекта (ID 82 = PixelOS)
-          cat << 'EOF' > crave.yaml
-          Version: 1
-          DefaultProjectID: 82
-          EOF
-          
-          # 2. ПОДМЕНА: Заставляем Crave думать, что мы — официальный проект PixelOS
-          # Это решает проблему "could not find matching projects"
-          git remote set-url origin https://github.com/PixelOS-AOSP/android_manifest.git
-          
-          # 3. Запуск сборки
-          /usr/local/bin/crave -k -c ${HOME}/.config/crave/crave.conf -v run --no-patch -- bash build.sh
+          rm -rf .git
+          crave run --projectID 82 --no-patch -- "bash build.sh"
 
       - name: Upload Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: PixelOS-mondrian-ROM
+          name: PixelOS-mondrian
           path: ./*.zip
-          if-no-files-found: ignore
