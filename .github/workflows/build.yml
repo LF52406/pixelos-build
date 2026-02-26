@@ -8,6 +8,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Install Crave
         run: |
           curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash
