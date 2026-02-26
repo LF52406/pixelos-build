@@ -1,58 +1,79 @@
-name: PixelOS Mondrian Crave Build
+name: PixelOS Mondrian Android 16 - Crave Build
 
 on:
   workflow_dispatch:
+    inputs:
+      clean_build:
+        description: 'Clean build? (true/false)'
+        required: false
+        default: 'true'
+      lunch_target:
+        description: 'Lunch target'
+        required: true
+        default: 'pixelos_mondrian-userdebug'
+      make_command:
+        description: 'Make command'
+        required: false
+        default: 'mka bacon -j$(nproc --all)'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install Crave
+      - name: Install Crave (самый надёжный способ)
         run: |
-          curl -sL https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash
-          sudo mv crave /usr/local/bin/crave
+          curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
+          chmod +x crave
+          sudo mv crave /usr/local/bin/crave || mv crave /usr/local/bin/crave
+          echo "/usr/local/bin" >> $GITHUB_PATH
+          which crave || echo "crave not in PATH"
+          crave --version || echo "crave version failed"
 
       - name: Configure Crave
+        env:
+          CRAVE_CONF: ${{ secrets.CRAVE_CONF }}
         run: |
-          mkdir -p $HOME/.config/crave
-          echo "${{ secrets.CRAVE_CONF }}" > $HOME/.config/crave/crave.conf
+          mkdir -p \~/.crave/config
+          echo "$CRAVE_CONF" > \~/.crave/config/crave.conf
+          crave whoami || echo "login failed"
 
-      - name: Start build on Crave
+      - name: Run Build on Crave
         run: |
-          crave run \
-            --project "${{ github.repository }}" \
-            --branch "${{ github.ref_name }}" \
-            --no-patch \
-            -- bash -c '
-              set -e
+          git remote set-url origin https://android.googlesource.com/platform/manifest
+          crave -k -c \~/.crave/config/crave.conf -v run \
+            ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} \
+            --no-patch -- bash -c "
+              rm -rf .repo && \
+              repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs && \
+              rm -rf .repo/local_manifests && \
+              mkdir -p .repo/local_manifests && \
+              curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/.github/workflows/mondrian.xml -o .repo/local_manifests/mondrian.xml && \
+              repo sync -c -j\$(nproc --all) --force-sync --no-tags --no-clone-bundle && \
+              source build/envsetup.sh && \
+              breakfast mondrian || true && \
+              cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true && \
+              lunch ${{ github.event.inputs.lunch_target }} || echo 'LUNCH FAILED' && \
+              ${{ github.event.inputs.make_command }} || echo 'MAKE FAILED'
+            "
 
-              export USE_CCACHE=1
-              export CCACHE_EXEC=$(which ccache)
-              ccache -M 50G
+      - name: Pull Artifact (zip)
+        if: always()
+        run: |
+          git remote set-url origin https://android.googlesource.com/platform/manifest
+          crave -k -c \~/.crave/config/crave.conf pull out/target/product/mondrian/*.zip || \
+          crave -k -c \~/.crave/config/crave.conf pull out/target/product/mondrian/*mondrian*.zip || \
+          ls -la out/target/product/mondrian/ || echo "No out dir"
 
-              mkdir -p pixelos
-              cd pixelos
-
-              repo init -u https://github.com/LF52406/android_manifest.git -b sixteen-qpr2 --git-lfs
-
-              mkdir -p .repo/local_manifests
-              cat > .repo/local_manifests/mondrian.xml << "EOF"
-<?xml version="1.0" encoding="UTF-8"?>
-<manifest>
-  <remote name="github" fetch="https://github.com/" />
-  <project path="device/xiaomi/mondrian" name="LF52406/android_device_xiaomi_mondrian" remote="github" revision="lineage-23.2" />
-  <project path="device/xiaomi/sm8450-common" name="LF52406/android_device_xiaomi_sm8450-common" remote="github" revision="lineage-23.2" />
-  <project path="vendor/xiaomi/mondrian" name="LF52406/proprietary_vendor_xiaomi_mondrian" remote="github" revision="lineage-23.2" />
-  <project path="vendor/xiaomi/sm8450-common" name="LF52406/proprietary_vendor_xiaomi_sm8450-common" remote="github" revision="lineage-23.2" />
-  <project path="kernel/xiaomi/sm8450" name="LF52406/android_kernel_xiaomi_sm8450" remote="github" revision="lineage-23.2" />
-</manifest>
-EOF
-
-              repo sync -c -j$(nproc --all) --force-sync --no-tags --no-clone-bundle
-              source build/envsetup.sh
-              lunch pixelos_mondrian-userdebug
-              mka bacon -j$(nproc --all)
-            '
+      - name: Upload Artifact to GitHub
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixelos-mondrian-build
+          path: out/target/product/mondrian/*.zip
+          if-no-files-found: warn
+          retention-days: 7
