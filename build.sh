@@ -1,18 +1,16 @@
 #!/bin/bash
 set -e
 
-# Путь для сохранения результата
-GH_DIR=$PWD
+OUT_DIR=$PWD
 
-# Переходим в рабочую папку на сервере Crave
 mkdir -p /tmp/build
 cd /tmp/build
 
-echo "=== Инициализация исходников PixelOS (15.0) ==="
+rm -rf .repo/local_manifests
+mkdir -p .repo/local_manifests
+
 repo init -u https://github.com/LF52406/android_manifest.git -b sixteen-qpr2 --git-lfs
 
-echo "=== Добавление манифестов для Mondrian (Poco F5 Pro) ==="
-mkdir -p .repo/local_manifests
 cat << 'EOF' > .repo/local_manifests/mondrian.xml
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
@@ -27,13 +25,10 @@ cat << 'EOF' > .repo/local_manifests/mondrian.xml
 </manifest>
 EOF
 
-echo "=== Синхронизация репозиториев (это может занять время) ==="
 repo sync -c -j$(nproc --all) --force-sync --no-tags --no-clone-bundle
 
-echo "=== Старт компиляции ==="
 source build/envsetup.sh
 lunch pixelos_mondrian-userdebug
 mka bacon -j$(nproc --all)
 
-echo "=== Сборка завершена, копируем файл ==="
-cp out/target/product/mondrian/*.zip $GH_DIR/
+cp out/target/product/mondrian/*.zip $OUT_DIR/
