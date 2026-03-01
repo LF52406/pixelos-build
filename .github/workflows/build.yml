@@ -1,71 +1,57 @@
-name: PixelOS Mondrian Android 16 - Crave Build
-
+name: Build AOSPA
 on:
   workflow_dispatch:
-    inputs:
-      clean_build:
-        description: 'Clean build? (true/false)'
-        required: false
-        default: 'true'
-      lunch_target:
-        description: 'Lunch target'
-        required: true
-        default: 'pixelos_mondrian-userdebug'
-      make_command:
-        description: 'Make command'
-        required: false
-        default: 'mka bacon -j$(nproc --all)'
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Crave
-        run: |
-          curl -L -o crave https://github.com/accupara/crave/releases/download/0.2-7193/crave-0.2-7193-linux-amd64.bin
-          chmod +x crave
-          sudo mv crave /usr/local/bin/crave
-
-      - name: Configure Crave
-        env:
-          CRAVE_CONF: ${{ secrets.CRAVE_CONF }}
-        run: |
-          mkdir -p ${HOME}/.config/crave
-          echo "$CRAVE_CONF" > ${HOME}/.config/crave/crave.conf
-
-      - name: Run Build on Crave
-        run: |
-          cat << 'EOF' > build.sh
-          set -e
-          rm -rf .repo/local_manifests
-          mkdir -p .repo/local_manifests
-          repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs
-          curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/.github/workflows/mondrian.xml -o .repo/local_manifests/mondrian.xml
-          repo sync -c -j$(nproc --all) --force-sync --no-tags --no-clone-bundle
-          source build/envsetup.sh
-          breakfast mondrian || true
-          cp -f device/xiaomi/mondrian/lineage_mondrian.mk device/xiaomi/mondrian/pixelos_mondrian.mk || true
-          lunch ${{ github.event.inputs.lunch_target }}
-          ${{ github.event.inputs.make_command }}
-          EOF
-
-          git remote set-url origin https://android.googlesource.com/platform/manifest
-          crave -k -c ${HOME}/.config/crave/crave.conf run ${{ github.event.inputs.clean_build == 'true' && '--clean' || '' }} --no-patch -- bash build.sh
-
-      - name: Pull Artifact
-        if: always()
-        run: |
-          crave -k -c ${HOME}/.config/crave/crave.conf pull out/target/product/mondrian/*.zip || true
-
-      - name: Upload Artifact to GitHub
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
         with:
-          name: pixelos-mondrian-build
-          path: out/target/product/mondrian/*.zip
-          if-no-files-found: warn
-          retention-days: 7
+          root-reserve-mb: 8192
+          swap-size-mb: 16384
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Set up environment
+        run: |
+          sudo apt update
+          sudo apt upgrade -y
+          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
+          git lfs install
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          git config --global user.name "LF5"
+          git config --global user.email "lf524prod24061993@gmail.com"
+
+      - name: Sync and Build
+        run: |
+          export PATH=~/bin:$PATH
+          mkdir -p ~/aospa
+          cd ~/aospa
+          repo init -u https://github.com/AOSPA/manifest -b baklava --depth=1
+          
+          mkdir -p .repo/local_manifests
+          cat <<EOF > .repo/local_manifests/mondrian.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+              <project name="LF52406/android_device_xiaomi_mondrian" path="device/xiaomi/mondrian" remote="github" />
+              <project name="LF52406/android_device_xiaomi_sm8450-common" path="device/xiaomi/sm8450-common" remote="github" />
+              <project name="LF52406/proprietary_vendor_xiaomi_mondrian" path="vendor/xiaomi/mondrian" remote="github" />
+              <project name="LF52406/proprietary_vendor_xiaomi_sm8450-common" path="vendor/xiaomi/sm8450-common" remote="github" />
+              <project name="LF52406/android_kernel_xiaomi_sm8450" path="kernel/xiaomi/sm8450" remote="github" />
+              <project name="raul-16/android_kernel_xiaomi_sm8450-modules" path="kernel/xiaomi/sm8450-modules" remote="github" revision="lineage-23.2" />
+              <project name="LineageOS/android_hardware_xiaomi" path="hardware/xiaomi" remote="github" revision="lineage-23.2" />
+          </manifest>
+          EOF
+          
+          repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+          
+          . build/envsetup.sh
+          lunch aospa_mondrian-userdebug
+          mka bacon
