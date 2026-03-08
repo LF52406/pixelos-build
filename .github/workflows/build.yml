@@ -6,41 +6,51 @@ on:
 jobs:
   build:
     runs-on: self-hosted
-    
-    steps:
-      - name: Очистка рабочего пространства
-        run: |
-          sudo rm -rf ${{ github.workspace }}/*
-          df -h /
 
-      - name: Установка зависимостей
+    steps:
+      - name: Clean workspace
+        run: |
+          sudo rm -rf ~/android
+          mkdir -p ~/android
+          df -h
+
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf imagemagick lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python3-minimal
+          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib \
+          gcc-multilib git git-lfs gnupg gperf imagemagick lib32readline-dev \
+          lib32z1-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev \
+          libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools \
+          xsltproc zip zlib1g-dev python3
 
-      - name: Настройка Git
+      - name: Setup git
         run: |
-          git config --global user.email "your-email@example.com"
-          git config --global user.name "LF5"
+          git config --global user.email "you@example.com"
+          git config --global user.name "builder"
           git lfs install
 
-      - name: Установка Repo
+      - name: Install repo
         run: |
           mkdir -p ~/bin
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
+          echo 'export PATH=~/bin:$PATH' >> ~/.bashrc
 
-      - name: Синхронизация PixelOS
+      - name: Init PixelOS source
         run: |
           export PATH=~/bin:$PATH
-          mkdir -p ~/android && cd ~/android
-          repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs --depth=1
-          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
+          cd ~/android
+          repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs
 
-      - name: Клонирование исходников устройства
+      - name: Sync source
+        run: |
+          export PATH=~/bin:$PATH
+          cd ~/android
+          repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+
+      - name: Clone device trees
         run: |
           cd ~/android
-          rm -rf device/xiaomi/mondrian kernel/xiaomi/sm8450 kernel/xiaomi/sm8450-modules vendor/xiaomi/mondrian vendor/xiaomi/sm8450-common hardware/xiaomi
           git clone https://github.com/LineageOS/android_device_xiaomi_mondrian.git -b lineage-23.2 device/xiaomi/mondrian
           git clone https://github.com/LineageOS/android_kernel_xiaomi_sm8450.git -b lineage-23.2 kernel/xiaomi/sm8450
           git clone https://github.com/LineageOS/android_kernel_xiaomi_sm8450-modules.git -b lineage-23.2 kernel/xiaomi/sm8450-modules
@@ -48,31 +58,33 @@ jobs:
           git clone https://github.com/TheMuppets/proprietary_vendor_xiaomi_sm8450-common.git -b lineage-23.2 vendor/xiaomi/sm8450-common
           git clone https://github.com/LineageOS/android_hardware_xiaomi.git -b lineage-23.2 hardware/xiaomi
 
-      - name: Адаптация дерева под PixelOS
+      - name: Adapt device tree for PixelOS
         run: |
           cd ~/android/device/xiaomi/mondrian
-          mv lineage_mondrian.mk pixelos_mondrian.mk || true
-          sed -i 's/lineage/pixelos/g' pixelos_mondrian.mk || true
-          sed -i 's/lineage/pixelos/g' AndroidProducts.mk || true
-          echo "" >> AndroidProducts.mk
-          echo "COMMON_LUNCH_CHOICES := pixelos_mondrian-trunk_staging-userdebug pixelos_mondrian-ap4a-userdebug pixelos_mondrian-userdebug" >> AndroidProducts.mk
+          mv lineage_mondrian.mk pixelos_mondrian.mk
+          sed -i 's/lineage/pixelos/g' pixelos_mondrian.mk
+          sed -i 's/lineage_mondrian/pixelos_mondrian/g' AndroidProducts.mk
+          echo "COMMON_LUNCH_CHOICES := pixelos_mondrian-userdebug" >> AndroidProducts.mk
 
-      - name: Настройка Ccache
+      - name: Setup ccache
         run: |
           export CCACHE_DIR=~/.ccache
           ccache -M 50G
-          ccache -o compression=true
 
-      - name: Запуск компиляции
+      - name: Build ROM
         run: |
           export PATH=~/bin:$PATH
-          export CCACHE_DIR=~/.ccache
           export USE_CCACHE=1
+          export CCACHE_DIR=~/.ccache
+          export NINJA_ARGS="-j2"
+
           cd ~/android
           source build/envsetup.sh
-          lunch pixelos_mondrian-trunk_staging-userdebug || lunch pixelos_mondrian-ap4a-userdebug || lunch pixelos_mondrian-userdebug
-          mka bacon -j$(nproc --all)
+          lunch pixelos_mondrian-userdebug
+          mka bacon -j2
 
-      - name: Проверка результата
-        run: |
-          ls -lh ~/android/out/target/product/mondrian/*.zip || echo "Failed"
+      - name: Upload ROM
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixelOS-mondrian
+          path: ~/android/out/target/product/mondrian/*.zip
