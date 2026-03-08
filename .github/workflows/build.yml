@@ -8,13 +8,14 @@ jobs:
     runs-on: self-hosted
     
     steps:
-      - name: Очистка рабочего пространства
+      - name: Полная очистка сервера
         run: |
-          # Очищаем рабочую директорию, используя права sudo
           sudo rm -rf ${{ github.workspace }}/*
+          sudo rm -rf ~/android
           sudo rm -rf ~/.ccache
+          df -h /
 
-      - name: Установка системных зависимостей (Ubuntu 24.04)
+      - name: Установка зависимостей
         run: |
           sudo apt update
           sudo apt install -y bc bison build-essential ccache curl flex g++-multilib \
@@ -28,25 +29,22 @@ jobs:
           git config --global user.email "your-email@example.com"
           git config --global user.name "LF5"
 
-      - name: Установка утилиты Repo
+      - name: Установка Repo
         run: |
           mkdir -p ~/bin
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
 
-      - name: Синхронизация исходников PixelOS (sixteen-qpr2)
+      - name: Синхронизация PixelOS (sixteen-qpr2)
         run: |
           export PATH=~/bin:$PATH
           mkdir -p ~/android && cd ~/android
-          # Инициализация правильного репозитория и ветки согласно вашему XML
           repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs --depth=1
-          # Синхронизация в 6 потоков для вашего процессора
-          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
 
-      - name: Клонирование дерева устройства (mondrian)
+      - name: Клонирование дерева mondrian
         run: |
           cd ~/android
-          # Используем дерево LineageOS для Android 16
           git clone https://github.com/LineageOS/android_device_xiaomi_mondrian.git -b lineage-23.2 device/xiaomi/mondrian
 
       - name: Настройка Ccache
@@ -62,11 +60,9 @@ jobs:
           export USE_CCACHE=1
           cd ~/android
           source build/envsetup.sh
-          # Подготовка сборки для mondrian
           lunch pixelos_mondrian-userdebug
-          # Сборка командой mka bacon
           mka bacon -j$(nproc --all)
 
       - name: Проверка результата
         run: |
-          ls -lh ~/android/out/target/product/mondrian/*.zip || echo "Файл прошивки не найден"
+          ls -lh ~/android/out/target/product/mondrian/*.zip || echo "Сборка не завершена"
