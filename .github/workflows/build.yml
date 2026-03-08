@@ -50,9 +50,9 @@ jobs:
       - name: Адаптация дерева под PixelOS
         run: |
           cd ~/android/device/xiaomi/mondrian
-          mv lineage_mondrian.mk pixelos_mondrian.mk || true
-          sed -i 's/lineage/pixelos/g' pixelos_mondrian.mk || true
-          sed -i 's/lineage/pixelos/g' AndroidProducts.mk || true
+          mv lineage_mondrian.mk aosp_mondrian.mk || true
+          sed -i 's/lineage/aosp/g' aosp_mondrian.mk || true
+          sed -i 's/lineage/aosp/g' AndroidProducts.mk || true
 
       - name: Настройка Ccache
         run: |
@@ -67,7 +67,7 @@ jobs:
           export USE_CCACHE=1
           cd ~/android
           source build/envsetup.sh
-          lunch pixelos_mondrian-userdebug
+          lunch aosp_mondrian-userdebug || lunch aosp_mondrian-trunk_staging-userdebug || lunch aosp_mondrian-ap4a-userdebug
           mka bacon -j$(nproc --all)
 
       - name: Проверка результата
