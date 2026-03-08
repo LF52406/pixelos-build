@@ -1,51 +1,72 @@
 name: Build PixelOS Android 16 (mondrian)
 
 on:
-  workflow_dispatch: # Кнопка ручного запуска
+  workflow_dispatch: # Кнопка для ручного запуска в Actions
 
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on: self-hosted # Запуск на вашем сервере 155.212.165.160
+    
     steps:
-      - name: Очистка диска перед началом
+      - name: Очистка рабочего пространства
         run: |
-          sudo rm -rf /home/lf5/actions-runner/_work/pixelos-build/pixelos-build/*
-          
-      - name: Установка необходимых инструментов
+          # Используем sudo без пароля (после настройки в Termius)
+          sudo rm -rf ${{ github.workspace }}/*
+          sudo rm -rf ~/.ccache
+
+      - name: Установка системных зависимостей
         run: |
           sudo apt update
-          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
+          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib \
+          gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
+          lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev \
+          libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc \
+          zip zlib1g-dev python3 python-is-python3
 
       - name: Настройка Git
         run: |
           git config --global user.email "your-email@example.com"
           git config --global user.name "LF5"
 
-      - name: Установка репозитория (repo)
+      - name: Установка утилиты Repo
         run: |
           mkdir -p ~/bin
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
-          export PATH=~/bin:$PATH
 
       - name: Синхронизация исходников PixelOS (Android 16)
         run: |
           export PATH=~/bin:$PATH
-          mkdir -p android && cd android
-          repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen --git-lfs
+          mkdir -p ~/android && cd ~/android
+          # Инициализация ветки sixteen для Android 16
+          repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen --git-lfs --depth=1
+          # Оптимизированная синхронизация под 6 потоков
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-      - name: Подготовка дерева устройства (mondrian)
+      - name: Клонирование дерева устройства (mondrian)
         run: |
-          export PATH=~/bin:$PATH
-          cd android
-          git clone https://github.com/PixelOS-Devices/device_xiaomi_mondrian.git -b sixteen device/xiaomi/mondrian
-          # Здесь скрипт сам подтянет зависимости (vendor, kernel) через lunch
-          
+          cd ~/android
+          # Дерево от LineageOS для ветки 23.2 (Android 16)
+          git clone https://github.com/LineageOS/android_device_xiaomi_mondrian.git -b lineage-23.2 device/xiaomi/mondrian
+
+      - name: Настройка Ccache (Ускорение повторных сборок)
+        run: |
+          export CCACHE_DIR=~/.ccache
+          ccache -M 50G
+          ccache -o compression=true
+
       - name: Запуск компиляции
         run: |
           export PATH=~/bin:$PATH
-          cd android
+          export CCACHE_DIR=~/.ccache
+          export USE_CCACHE=1
+          cd ~/android
           source build/envsetup.sh
+          # Подготовка конфигурации для Poco F5 Pro
           lunch pixelos_mondrian-userdebug
+          # Сборка финального архива (bacon)
           mka bacon -j$(nproc --all)
+
+      - name: Проверка результата
+        run: |
+          ls -lh ~/android/out/target/product/mondrian/*.zip
