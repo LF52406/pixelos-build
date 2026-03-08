@@ -1,57 +1,51 @@
-name: Build AOSPA
+name: Build PixelOS Android 16 (mondrian)
+
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Кнопка ручного запуска
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     steps:
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 8192
-          swap-size-mb: 16384
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-
-      - name: Set up environment
+      - name: Очистка диска перед началом
+        run: |
+          sudo rm -rf /home/lf5/actions-runner/_work/pixelos-build/pixelos-build/*
+          
+      - name: Установка необходимых инструментов
         run: |
           sudo apt update
-          sudo apt upgrade -y
-          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
-          git lfs install
+          sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
+
+      - name: Настройка Git
+        run: |
+          git config --global user.email "your-email@example.com"
+          git config --global user.name "LF5"
+
+      - name: Установка репозитория (repo)
+        run: |
           mkdir -p ~/bin
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
-          git config --global user.name "LF5"
-          git config --global user.email "lf524prod24061993@gmail.com"
+          export PATH=~/bin:$PATH
 
-      - name: Sync and Build
+      - name: Синхронизация исходников PixelOS (Android 16)
         run: |
           export PATH=~/bin:$PATH
-          mkdir -p ~/aospa
-          cd ~/aospa
-          repo init -u https://github.com/AOSPA/manifest -b baklava --depth=1
+          mkdir -p android && cd android
+          repo init -u https://github.com/PixelOS-AOSP/manifest.git -b sixteen --git-lfs
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+      - name: Подготовка дерева устройства (mondrian)
+        run: |
+          export PATH=~/bin:$PATH
+          cd android
+          git clone https://github.com/PixelOS-Devices/device_xiaomi_mondrian.git -b sixteen device/xiaomi/mondrian
+          # Здесь скрипт сам подтянет зависимости (vendor, kernel) через lunch
           
-          mkdir -p .repo/local_manifests
-          cat <<EOF > .repo/local_manifests/mondrian.xml
-          <?xml version="1.0" encoding="UTF-8"?>
-          <manifest>
-              <project name="LF52406/android_device_xiaomi_mondrian" path="device/xiaomi/mondrian" remote="github" />
-              <project name="LF52406/android_device_xiaomi_sm8450-common" path="device/xiaomi/sm8450-common" remote="github" />
-              <project name="LF52406/proprietary_vendor_xiaomi_mondrian" path="vendor/xiaomi/mondrian" remote="github" />
-              <project name="LF52406/proprietary_vendor_xiaomi_sm8450-common" path="vendor/xiaomi/sm8450-common" remote="github" />
-              <project name="LF52406/android_kernel_xiaomi_sm8450" path="kernel/xiaomi/sm8450" remote="github" />
-              <project name="raul-16/android_kernel_xiaomi_sm8450-modules" path="kernel/xiaomi/sm8450-modules" remote="github" revision="lineage-23.2" />
-              <project name="LineageOS/android_hardware_xiaomi" path="hardware/xiaomi" remote="github" revision="lineage-23.2" />
-          </manifest>
-          EOF
-          
-          repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
-          
-          . build/envsetup.sh
-          lunch aospa_mondrian-userdebug
-          mka bacon
+      - name: Запуск компиляции
+        run: |
+          export PATH=~/bin:$PATH
+          cd android
+          source build/envsetup.sh
+          lunch pixelos_mondrian-userdebug
+          mka bacon -j$(nproc --all)
